@@ -1,6 +1,6 @@
 # Python Script, API Version = V22
-import os
 import csv
+import os
 from copy import deepcopy
 
 
@@ -19,7 +19,6 @@ class Component:
         self.comment = None
         self.subcomponents = []
         self.simplified_comp = None
-        return
 
     def write_csv(self):
         tree_length = self.get_tree_length()
@@ -40,7 +39,6 @@ class Component:
             csv_writer = csv.DictWriter(infile, fieldnames=columns)
             csv_writer.writeheader()
             self.write_row(csv_writer, tree_length)
-        return
 
     def write_row(self, csv_writer, tree_length):
         csv_tree = deepcopy(self.tree)
@@ -62,7 +60,6 @@ class Component:
                 row[key] = ""
         csv_writer.writerow(row)
         [c.write_row(csv_writer, tree_length) for c in self.subcomponents]
-        return
 
     def get_tree_length(self, length=0):
         """
@@ -75,7 +72,6 @@ class Component:
     def compare_with_simplified_component(self, simplified_component):
         self.populate_simplified_component(simplified_component)
         self.populate_simplified_volume_values()
-        return
 
     def populate_simplified_component(self, simplified_component):
         self.simplified_comp = simplified_component
@@ -92,7 +88,6 @@ class Component:
                         simplified_subcomponents.pop(index_simplified_subcomp)
                     )
                     break
-        return
 
     def populate_simplified_volume_values(self):
         if not is_positive_float(self.volume_original):
@@ -115,7 +110,6 @@ class Component:
             self.volume_difference = diff if abs(diff) > 1e-3 else 0.0
         for subcomponent in self.subcomponents:
             subcomponent.populate_simplified_volume_values()
-        return
 
     def populate_simplified_merged_components_volume_values(self):
         """
@@ -131,7 +125,6 @@ class Component:
             * 100
         )
         self.volume_difference = diff if abs(diff) > 1e-3 else 0.0
-        return
 
     def merged_volume(self):
         """
@@ -174,7 +167,6 @@ class ComponentFromSC(Component):
             ComponentFromSC(sub_part, parent_component=self)
             for sub_part in sc_part.GetComponents()
         ]
-        return
 
 
 class ComponentFromCSV(Component):
@@ -216,7 +208,6 @@ class ComponentFromCSV(Component):
         self.density_correction_factor = float_or_none(row["DCF=ORG/STOCH"])
         self.comment = row["COMMENT"]
         self.subcomponents = []
-        return
 
 
 class BodyCounter:
@@ -225,7 +216,6 @@ class BodyCounter:
     @classmethod
     def add_to_counter(cls, amount):
         cls.global_counter += amount
-        return
 
 
 def read_tree_levels_from_csv(csv_filename):
