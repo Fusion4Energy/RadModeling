@@ -1,11 +1,9 @@
-# Python Script, API Version = V22
-
+# Python Script, API Version = V241
+# type: ignore
+# ruff: noqa: F821
 from copy import deepcopy
 
 INSTRUCTIONS_PATH = "plot_instructions.txt"
-
-_path = GetRootPart().Document.Path
-_path = "\\".join(_path.split("\\")[0:-1])
 
 
 class Command:
@@ -37,7 +35,7 @@ def cross_product(a, b):
 
 
 def read_commands(instructions_file_path):
-    with open(instructions_file_path, "r") as infile:
+    with open(instructions_file_path) as infile:
         text = infile.read()
 
     commands = [Command()]
@@ -87,7 +85,7 @@ def read_commands(instructions_file_path):
     return commands
 
 
-def plot_a_slice(command):
+def plot_a_slice(command, path):
     # Create a plane
     # the /100 will convert from cm to mm (not a mistake looks like a SpaceClaim bug)
     origin = Point.Create(
@@ -108,16 +106,19 @@ def plot_a_slice(command):
     ViewHelper.SetProjection(plane.Shape.Geometry.Frame, extent)
 
     # Save the screenshot
-    DocumentSave.Execute(_path + "\\" + str(command) + ".jpg")
+    DocumentSave.Execute(path + "\\" + str(command) + ".jpg")
 
     # Clean the scene of created objects
     plane.Delete()
 
 
 def main():
+    path = GetRootPart().Document.Path
+    path = "\\".join(path.split("\\")[0:-1])
+
     commands = read_commands(INSTRUCTIONS_PATH)
     for command in commands:
-        plot_a_slice(command)
+        plot_a_slice(command, path)
 
 
 main()

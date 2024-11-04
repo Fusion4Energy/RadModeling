@@ -1,7 +1,6 @@
 # Python Script, API Version = V22
 import csv
 
-
 MAX_DIFF = 1  # maximum volume difference allowed in %
 STEP = 1  # in mm
 
