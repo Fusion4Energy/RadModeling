@@ -65,6 +65,11 @@ The user should modify the input parameters directly on the script file.
      </video>
    </div>
 
+.. tip::
+
+    The F4Enix package includes a function to automatically generate a compatible CSV
+    file from an MCNP output file: `link <https://f4enix.readthedocs.io/en/latest/_autosummary/f4enix.output.MCNPoutput.Output.html#f4enix.output.MCNPoutput.Output.print_lp_debug>`_.
+
 Simplify toroidal profiles
 --------------------------
 
