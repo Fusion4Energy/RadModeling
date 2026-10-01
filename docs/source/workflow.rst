@@ -97,9 +97,15 @@ by material.
 Keep the instances of a part linked unless one of them really needs a different
 simplification. Making one independent is fine: it keeps its tag and its row.
 
-New parts (without a tag) get an ID on export, and copies of a tagged component become
-new instances of it with the same material. A component whose tag disappears is marked
-as ``deleted``.
+**Tag the parts you add.** Run the *Tag new components* SpaceClaim tool
+(:doc:`spaceclaim`) after adding parts, or write a tag with an unused number yourself,
+such as ``Shield [rm90]``. ``export`` adds tags that are not in the registry yet as new
+components with status ``new``; give them a material then. Parts left untagged also
+get an ID on export, but that ID only exists in the registry: the next export would add
+them again, so tag them before exporting.
+
+Copies of a tagged component become new instances of it with the same material. A
+component whose tag disappears is marked as ``deleted``.
 
 Instances carry the same tag, so they are told apart by their position: each one is
 matched with the registry row whose original centre of mass is nearest. An instance
@@ -124,7 +130,8 @@ and the check in one click.
 Reports the instances beyond the volume tolerance, and the geometry that will cause
 trouble in the conversion: surfaces a CSG converter cannot translate (splines, offset
 surfaces...), tori and invalid solids. It also lists deleted instances, extra
-instances (copies of a component), moved components and untagged parts.
+instances (copies of a component), moved components, new components (tags not in the
+registry yet) and untagged parts.
 ``--highlight problems.json`` writes the IDs per problem for the *Highlight problems*
 SpaceClaim tool.
 

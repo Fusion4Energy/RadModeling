@@ -176,7 +176,7 @@ class Matching:
     found: dict[Key, Instance]
     missing: list[Key]  # registry rows not in the model
     extra: list[Instance]  # more instances of a component than registry rows
-    unknown: list[Instance]  # tags that are not in the registry
+    new: list[Instance]  # tags that are not in the registry yet: new components
     untagged: list[Instance]
     moved: list[Key]  # single-body components far from their original position
 
@@ -191,11 +191,11 @@ def match_instances(instances: Sequence[Instance], registry: Registry) -> Matchi
             by_id[instance.id].append(instance)
 
     found: dict[Key, Instance] = {}
-    extra, unknown, moved = [], [], []
+    extra, new, moved = [], [], []
     for component_id, group in sorted(by_id.items()):
         rows = registry.instances(component_id)
         if not rows:
-            unknown.extend(group)
+            new.extend(group)
             continue
         paired = set()
         for row, instance in _pair(rows, group):
@@ -208,7 +208,7 @@ def match_instances(instances: Sequence[Instance], registry: Registry) -> Matchi
                 moved.append(row.key)
         extra.extend(i for i in group if id(i) not in paired)
     missing = [c.key for c in registry if c.key not in found]
-    return Matching(found, missing, extra, unknown, untagged, sorted(moved))
+    return Matching(found, missing, extra, new, untagged, sorted(moved))
 
 
 def _pair(
@@ -401,31 +401,42 @@ def check(
 # --- export ----------------------------------------------------------------------
 
 
+@dataclass
+class ExportResult:
+    cell_map: CellMap
+    added: list[Key]  # rows added to the registry
+    # Rows added for untagged parts: the CAD model does not know their tags, so they
+    # would be added again by the next export unless they are tagged in the CAD
+    untagged: list[Key]
+
+
 def export(
     simplified_step: str | os.PathLike,
     registry: Registry,
     output_step: str | os.PathLike,
     cell_map_csv: str | os.PathLike,
-) -> tuple[CellMap, list[Key]]:
+) -> ExportResult:
     """Write the model to convert with one solid per product, sorted by registry key.
 
-    New bodies are added to the registry with status ``new``: copies of a component
-    (more instances than rows) as new instances of it, with its material, and untagged
-    parts as new components.
-
-    Returns:
-        The cell map and the keys of the rows that were added to the registry.
+    New bodies are added to the registry with status ``new``: components with a tag
+    that is not in the registry yet, copies of a component (more instances than rows)
+    as new instances of it with its material, and untagged parts as new components.
     """
     matching = match_instances(
         find_instances(read_model(simplified_step), Measurer(analyse_geometry=False)),
         registry,
     )
-    if matching.unknown:
-        unknown = sorted({i.id for i in matching.unknown if i.id is not None})
-        raise ValueError(f"Component IDs not present in the registry: {unknown}")
-
     found = dict(matching.found)
     added = []
+    counts: Counter[int] = Counter()
+    for instance in matching.new:
+        assert instance.id is not None
+        counts[instance.id] += 1
+        key = Key(instance.id, counts[instance.id])
+        registry.add(_new_component(key, instance, status="new"))
+        found[key] = instance
+        added.append(key)
+
     for instance in matching.extra:
         assert instance.id is not None
         rows = registry.instances(instance.id)
@@ -443,6 +454,7 @@ def export(
         added.append(key)
 
     ids: GeometryMap[dict[str, int]] = GeometryMap()  # untagged definition -> ID
+    untagged = []
     for instance in matching.untagged:
         part = instance.parts[0]
         names = ids.get(part.shape)
@@ -453,6 +465,7 @@ def export(
         registry.add(_new_component(key, instance, status="new"))
         found[key] = instance
         added.append(key)
+        untagged.append(key)
 
     parts, keys = [], []
     root = (os.path.splitext(os.path.basename(os.fspath(output_step)))[0],)
@@ -469,7 +482,7 @@ def export(
     write_step(parts, output_step, instancing=False)
     cell_map = CellMap(keys)
     cell_map.save(cell_map_csv)
-    return cell_map, added
+    return ExportResult(cell_map, added, untagged)
 
 
 def exported_solids(

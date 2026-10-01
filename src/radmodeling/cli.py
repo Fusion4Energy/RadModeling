@@ -175,7 +175,7 @@ def check(
         "deleted": sorted({k.id for k in matching.missing}),
         "extra": sorted({i.id for i in matching.extra if i.id is not None}),
         "moved": sorted({k.id for k in matching.moved}),
-        "unknown": sorted({i.id for i in matching.unknown if i.id is not None}),
+        "new": sorted({i.id for i in matching.new if i.id is not None}),
     }
 
     table = Table(title=f"Components beyond ±{tolerance:g}% volume", show_lines=False)
@@ -221,13 +221,17 @@ def check(
         "(copies: they become new instances on export)",
     )
     line("Moved instances", matching.moved, "(further than their own size)")
-    line("Tags not in the registry", issues["unknown"])
+    line(
+        "New components",
+        issues["new"],
+        "(tags not in the registry yet: added on export)",
+    )
     untagged = [i.name for i in matching.untagged]
     console.print(
         f"[{'green' if not untagged else 'yellow'}]Untagged parts: "
         f"{len(untagged)}[/] "
         + esc(", ".join(untagged[:10]))
-        + (" (they get new IDs on export)" if untagged else "")
+        + (" (tag them: the 'Tag new components' SpaceClaim tool)" if untagged else "")
     )
     if highlight:
         highlight.write_text(json.dumps(issues, indent=1))
@@ -259,20 +263,26 @@ def export(
     _writable(registry)
     reg = Registry.load(registry)
     with console.status("Exporting..."):
-        try:
-            result, added = workflow.export(simplified, reg, output, cell_map)
-        except ValueError as exc:
-            _fail(str(exc))
+        result = workflow.export(simplified, reg, output, cell_map)
     reg.save(registry)
+    keys = result.cell_map.keys
     console.print(
-        f"[green]Exported {len(result.keys)} solids[/] of {len(set(result.keys))} "
-        f"instances.\n"
+        f"[green]Exported {len(keys)} solids[/] of {len(set(keys))} instances.\n"
         f"  STEP:     {esc(str(output))}\n  Cell map: {esc(str(cell_map))}"
     )
-    if added:
+    if result.added:
         console.print(
-            f"[yellow]{len(added)} new bodies were added to the registry with status "
-            f"'new':[/] {_keys_text(added)}. Check their material."
+            f"[yellow]{len(result.added)} new bodies were added to the registry with "
+            f"status 'new':[/] {_keys_text(result.added)}. Check their material."
+        )
+    if result.untagged:
+        ids = sorted({k.id for k in result.untagged})
+        console.print(
+            f"[yellow]{len(result.untagged)} of them were untagged parts[/] (IDs "
+            f"{_keys_text(ids)}). The CAD model does not have these tags, so the next "
+            "export would add them again: write them in the CAD names (the 'new' "
+            "rows of the registry give each part's name and position). Next time, "
+            "tag new parts before exporting with the 'Tag new components' tool."
         )
 
 

@@ -104,8 +104,9 @@ def test_init_check_export(tmp_path, cad_model):
 
     registry = Registry.load(registry_csv)
     output = tmp_path / "export.step"
-    cell_map, added = workflow.export(simplified, registry, output, tmp_path / "c.csv")
-    assert added == [(5, 1)]
+    result = workflow.export(simplified, registry, output, tmp_path / "c.csv")
+    cell_map = result.cell_map
+    assert result.added == result.untagged == [(5, 1)]
     assert registry[5, 1].status == "new"
     assert [k.id for k in cell_map.keys] == [1, 2, 3, 4, 4, 5]
     assert CellMap.load(tmp_path / "c.csv").keys == cell_map.keys
@@ -182,8 +183,10 @@ def test_instances_are_simplified_once_and_tracked_one_by_one(tmp_path):
 
     registry = Registry.load(registry_csv)
     output = tmp_path / "export.step"
-    cell_map, added = workflow.export(simplified, registry, output, tmp_path / "c.csv")
-    assert added == [(2, 7)]
+    result = workflow.export(simplified, registry, output, tmp_path / "c.csv")
+    cell_map = result.cell_map
+    assert result.added == [(2, 7)]
+    assert result.untagged == []
     assert registry[2, 7].status == "new"
     assert registry[2, 7].material == "SS316L"
     assert [str(k) for k in cell_map.keys] == [
@@ -211,6 +214,35 @@ def test_tagged_assemblies_are_instances(tmp_path):
     assert {k: i.centre_cm[0] for k, i in matching.found.items() if i.centre_cm} == (
         pytest.approx({(3, 1): 20, (3, 2): 0, (3, 3): 10}, abs=1e-6)
     )
+
+
+def test_new_tags_become_new_components(tmp_path, cad_model):
+    """A tag written in the CAD after init adds a component, only once."""
+    tagged, registry_csv = tmp_path / "tagged.step", tmp_path / "registry.csv"
+    workflow.init(cad_model, tagged, registry_csv)
+    shield = models.cylinder(300, 0, 0, 10, 10)
+    parts = read_step(tagged)
+    parts += [
+        Part("Shield [rm9]", ("New",), models.placed(shield, 0, y)) for y in (0, 50)
+    ]
+    simplified = tmp_path / "simplified.step"
+    write_step(parts, simplified)
+
+    result = workflow.check(simplified, Registry.load(registry_csv))
+    assert [i.id for i in result.matching.new] == [9, 9]
+    assert result.matching.missing == []
+
+    for run in range(2):
+        registry = Registry.load(registry_csv)
+        output = tmp_path / "export.step"
+        result = workflow.export(simplified, registry, output, tmp_path / "c.csv")
+        registry.save(registry_csv)
+        assert result.added == ([(9, 1), (9, 2)] if run == 0 else [])
+        assert result.untagged == []
+    registry = Registry.load(registry_csv)
+    assert [c.status for c in registry.instances(9)] == ["new", "new"]
+    assert registry[9, 2].centre_cm == pytest.approx((30, 5, 0.5))
+    assert registry[9, 1].levels == ("New",)
 
 
 def test_tags_left_only_on_bodies_are_found(tmp_path):

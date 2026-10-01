@@ -49,6 +49,14 @@ Tools
    It runs ``radmod`` with the Python that wrote the loaders. Loaders written before
    this tool existed do not know it: write them again and publish *Check model*.
 
+**Tag new components**
+   Gives the next free ``[rmN]`` tags to the components added after ``radmod init``.
+   Select bodies or faces to tag only their components; with nothing selected, all the
+   untagged bodies are tagged. A component and all the linked instances of a part get
+   a single tag; bodies directly in the root part are tagged themselves. The new IDs
+   come after those of the registry and of the document, and ``radmod export`` adds
+   them to the registry.
+
 **Check volumes**
    Colours in red the instances whose volume differs from the original by more
    than 1 %, blue transparent the rest, and grey the untagged bodies.
