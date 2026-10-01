@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.5"]
+dev = ["pytest>=8", "ruff>=0.5", "cadquery-ocp-stubs>=7.8", "pyright>=1.1.380"]
 
 [project.scripts]
 radmod = "radmodeling.cli:app"
@@ -33,6 +33,8 @@ testpaths = ["tests"]
 
 [tool.pyright]
 # SpaceClaim scripts run in IronPython with names injected by SpaceClaim
+venvPath = "."
+venv = ".venv"
 exclude = ["src/radmodeling/spaceclaim", ".venv"]
 
 [tool.ruff]

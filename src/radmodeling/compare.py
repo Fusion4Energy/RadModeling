@@ -13,10 +13,11 @@ Lengths: the CAD is in mm and MCNP in cm. Results are reported in cm and cm3.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 import numpy as np
-from OCP.TopoDS import TopoDS_Solid
+from OCP.TopoDS import TopoDS_Shape
 
 from radmodeling.cad.mesh import LineFrame, TriMesh, inside_on_lines, triangulate
 from radmodeling.cad.occ import bounding_box
@@ -47,7 +48,7 @@ class VolumeComparison:
 
 def compare_component(
     component_id: int,
-    solids: list[TopoDS_Solid],
+    solids: Sequence[TopoDS_Shape],
     cells: list[int],
     geometry: Geometry,
     n_points: int = 100_000,
@@ -83,8 +84,17 @@ def compare_component(
         for cell in cells:
             in_cell |= evaluator.cell(cell)
     except ValueError as exc:
+        nan = float("nan")
         return VolumeComparison(
-            component_id, cells, cad_volume, *([float("nan")] * 4), False, str(exc)
+            component_id=component_id,
+            cells=cells,
+            cad_volume_cm3=cad_volume,
+            mcnp_volume_cm3=nan,
+            mcnp_volume_std_cm3=nan,
+            cad_only_cm3=nan,
+            mcnp_only_cm3=nan,
+            touches_sampling_box=False,
+            error=str(exc),
         )
     in_cell = in_cell.reshape(t.shape)
 
@@ -112,7 +122,7 @@ def compare_component(
     )
 
 
-def _union_bounds(solids: list[TopoDS_Solid]) -> tuple[np.ndarray, np.ndarray]:
+def _union_bounds(solids: Sequence[TopoDS_Shape]) -> tuple[np.ndarray, np.ndarray]:
     boxes = np.array([bounding_box(s) for s in solids])
     return boxes[:, :3].min(axis=0), boxes[:, 3:].max(axis=0)
 
@@ -208,7 +218,7 @@ def slice_mcnp(geometry: Geometry, plane: Plane, n_u: int, n_v: int) -> SliceRes
 
 
 def classify_cad_on_plane(
-    components: dict[int, list[TopoDS_Solid]], plane: Plane, n_u: int, n_v: int
+    components: Mapping[int, Sequence[TopoDS_Shape]], plane: Plane, n_u: int, n_v: int
 ) -> np.ndarray:
     """Component id of every pixel according to the CAD (0 where there is none)."""
     result = np.zeros((n_v, n_u), dtype=np.int64)
@@ -231,7 +241,7 @@ def classify_cad_on_plane(
     return result
 
 
-def near_plane(solid: TopoDS_Solid, plane: Plane, half_diagonal: float) -> bool:
+def near_plane(solid: TopoDS_Shape, plane: Plane, half_diagonal: float) -> bool:
     """Whether the solid's box crosses the plane near the window (lengths in mm)."""
     box = np.array(bounding_box(solid))
     centre, half = (box[:3] + box[3:]) / 2, (box[3:] - box[:3]) / 2

@@ -7,6 +7,7 @@ CAD preparation and CAD-to-MCNP quality assurance. Python package `radmodeling`
 
 - Tests: `.venv/bin/pytest` (fast, ~5 s; builds its CAD with OCP, no fixture files)
 - Lint/format: `.venv/bin/ruff check . && .venv/bin/ruff format .`
+- Types: `.venv/bin/pyright src tests` (OCP types come from `cadquery-ocp-stubs`)
 - Docs: `.venv/bin/sphinx-build -b html docs/source <out>`
 
 ## Architecture
