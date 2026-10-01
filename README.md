@@ -41,6 +41,9 @@ model.mcnp ──radmod compare──▶ CAD vs MCNP volumes, density correction
 pip install git+https://github.com/Fusion4Energy/RadModeling.git
 ```
 
+Where the `radmod` executable is blocked ("Access is denied"), write
+`python -m radmod` instead, with the same arguments.
+
 For development, or for SpaceClaim tools that update with `git pull`:
 
 ```bash

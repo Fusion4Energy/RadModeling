@@ -2,6 +2,8 @@
 
 CAD preparation and CAD-to-MCNP quality assurance. Python package `radmodeling`
 (`src/radmodeling`) with the `radmod` CLI (typer). Docs in `docs/source` (Sphinx).
+`src/radmod` is only an alias so `python -m radmod` works like the `radmod` command;
+keep all code in `radmodeling`.
 
 ## Commands
 

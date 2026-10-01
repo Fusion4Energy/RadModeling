@@ -276,3 +276,18 @@ def test_spaceclaim_loaders(tmp_path):
     folder = text.split('RADMODELING_SPACECLAIM = r"')[1].split('"')[0]
     for script in ("_rm.py", "check_volumes.py"):
         assert (Path(folder) / script).exists()
+
+
+@pytest.mark.parametrize("module", ["radmod", "radmodeling"])
+def test_python_dash_m_entry_point(module):
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", module, "--help"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert f"python -m {module}" in result.stdout
+    assert "spaceclaim-loaders" in result.stdout

@@ -23,6 +23,7 @@ Layout
      cad/              OpenCascade: STEP, meshes, sections, analysis, elbows
      mcnp/             MCNP geometry evaluation and material assignment
      spaceclaim/       IronPython tools run by the SpaceClaim loaders
+   src/radmod/         alias so that "python -m radmod" works like "radmod"
    tests/              pytest suite; tests/models.py builds the test CAD and MCNP
 
 Principles

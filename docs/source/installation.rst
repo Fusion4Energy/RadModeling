@@ -13,6 +13,12 @@ For users
 
 This installs the ``radmod`` command. Check it with ``radmod --help``.
 
+.. note::
+
+   On machines that block executables in the Python ``Scripts`` folder ("Access is
+   denied"), write ``python -m radmod`` wherever the documentation says ``radmod``:
+   it is the same command with the same arguments, e.g. ``python -m radmod check ...``.
+
 For development, or to get SpaceClaim tools that update with the code
 ---------------------------------------------------------------------
 
