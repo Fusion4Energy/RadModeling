@@ -114,6 +114,9 @@ instance and a single body are matched anyway and reported as moved.
 
    radmod check simplified.step -r machine_registry.csv --tolerance 1
 
+``-r`` can be left out when ``machine_registry.csv`` is the only registry next to the
+model or in the current folder: every command finds it and prints which one it used.
+
 Reports the instances beyond the volume tolerance, and the geometry that will cause
 trouble in the conversion: surfaces a CSG converter cannot translate (splines, offset
 surfaces...), tori and invalid solids. It also lists deleted instances, extra

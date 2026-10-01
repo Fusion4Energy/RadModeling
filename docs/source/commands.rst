@@ -4,6 +4,12 @@ Commands
 All commands print their full list of options with ``radmod <command> --help``.
 Lengths are in cm and volumes in cm\ :sup:`3`, except in CAD files (mm).
 
+The registry is given with ``-r``. Without it, the commands use the only
+``*_registry.csv`` file next to their input files, or else in the current folder, and
+print which one they picked. If there are several, they stop and ask for ``-r``.
+``compare`` only updates the registry it finds when there is one; ``--no-registry``
+skips the update.
+
 Workflow
 --------
 

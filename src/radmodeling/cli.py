@@ -21,7 +21,13 @@ app = typer.Typer(
 console = Console()
 
 RegistryOption = Annotated[
-    Path, typer.Option("--registry", "-r", help="Component registry CSV.")
+    Path | None,
+    typer.Option(
+        "--registry",
+        "-r",
+        help="Component registry CSV. Default: the only *_registry.csv next to the "
+        "input files or in the current folder.",
+    ),
 ]
 CellMapOption = Annotated[
     Path, typer.Option("--cell-map", "-m", help="Cell map CSV written by 'export'.")
@@ -34,6 +40,40 @@ FirstCellOption = Annotated[
 def _fail(message: str) -> NoReturn:
     console.print(f"[bold red]Error:[/] {esc(message)}")
     raise typer.Exit(1)
+
+
+REGISTRY_SUFFIX = "_registry.csv"
+
+
+def _registry_candidates(near: list[Path]) -> list[Path]:
+    """The registries in the first folder that has any: those of the files, then cwd."""
+    folders = list(dict.fromkeys(p.resolve().parent for p in near))
+    folders.append(Path.cwd())
+    for folder in folders:
+        found = sorted(
+            p for p in folder.iterdir() if p.name.lower().endswith(REGISTRY_SUFFIX)
+        )
+        if found:
+            return found
+    return []
+
+
+def _registry(
+    given: Path | None, near: list[Path], required: bool = True
+) -> Path | None:
+    """The registry given with -r, or else the only one found near the input files."""
+    if given is not None:
+        return given
+    found = _registry_candidates(near)
+    if len(found) == 1:
+        console.print(f"Registry: {esc(str(found[0]))}")
+        return found[0]
+    if len(found) > 1:
+        names = ", ".join(p.name for p in found)
+        _fail(f"several registries found ({names}): choose one with -r")
+    if required:
+        _fail(f"no *{REGISTRY_SUFFIX} found next to the input files: give it with -r")
+    return None
 
 
 def _ids(text: str | None) -> list[int] | None:
@@ -91,7 +131,7 @@ def init(
 @app.command()
 def check(
     simplified: Annotated[Path, typer.Argument(help="Simplified STEP model.")],
-    registry: RegistryOption,
+    registry: RegistryOption = None,
     tolerance: Annotated[
         float, typer.Option(help="Maximum volume difference allowed [%].")
     ] = 1.0,
@@ -107,6 +147,8 @@ def check(
     from radmodeling import workflow
     from radmodeling.registry import Registry
 
+    registry = _registry(registry, [simplified])
+    assert registry is not None
     reg = Registry.load(registry)
     with console.status("Analysing the simplified model..."):
         result = workflow.check(simplified, reg, tolerance)
@@ -185,10 +227,10 @@ def check(
 @app.command()
 def export(
     simplified: Annotated[Path, typer.Argument(help="Simplified STEP model.")],
-    registry: RegistryOption,
     output: Annotated[
         Path, typer.Option("--output", "-o", help="STEP file to convert to MCNP.")
     ],
+    registry: RegistryOption = None,
     cell_map: Annotated[
         Path | None, typer.Option("--cell-map", "-m", help="Cell map CSV to write.")
     ] = None,
@@ -202,6 +244,8 @@ def export(
     from radmodeling.registry import Registry
 
     cell_map = cell_map or output.with_name(f"{output.stem}_cells.csv")
+    registry = _registry(registry, [simplified])
+    assert registry is not None
     reg = Registry.load(registry)
     with console.status("Exporting..."):
         try:
@@ -227,11 +271,11 @@ def export(
 @app.command()
 def materials(
     mcnp: Annotated[Path, typer.Argument(help="MCNP input from the converter.")],
-    registry: RegistryOption,
     cell_map: CellMapOption,
     library: Annotated[
         Path, typer.Option("--library", "-l", help="Material library TOML.")
     ],
+    registry: RegistryOption = None,
     output: Annotated[
         Path | None, typer.Option("--output", "-o", help="MCNP input to write.")
     ] = None,
@@ -252,6 +296,8 @@ def materials(
     from radmodeling.registry import Registry
 
     output = output or mcnp.with_name(f"{mcnp.stem}_materials{mcnp.suffix}")
+    registry = _registry(registry, [mcnp, cell_map])
+    assert registry is not None
     model = read_model(mcnp)
     try:
         report = assign_materials(
@@ -300,8 +346,16 @@ def compare(
     cell_map: CellMapOption,
     registry: Annotated[
         Path | None,
-        typer.Option("--registry", "-r", help="Registry to update with MCNP volumes."),
+        typer.Option(
+            "--registry",
+            "-r",
+            help="Registry to update with the MCNP volumes. Default: the only "
+            "*_registry.csv next to the input files or in the current folder.",
+        ),
     ] = None,
+    no_registry: Annotated[
+        bool, typer.Option("--no-registry", help="Do not update any registry.")
+    ] = False,
     first_cell: FirstCellOption = 1,
     points: Annotated[int, typer.Option(help="Sample points per component.")] = 100_000,
     components: Annotated[
@@ -327,6 +381,12 @@ def compare(
     from radmodeling.registry import Key, Registry
     from radmodeling.workflow import exported_solids
 
+    if not no_registry:
+        registry = _registry(registry, [step, mcnp, cell_map], required=False)
+        if registry is None:
+            console.print(
+                "[yellow]No registry found: MCNP volumes will not be saved[/]"
+            )
     cmap = CellMap.load(cell_map)
     cells_by_instance = cmap.cells_by_instance(first_cell)
     with console.status("Reading the models..."):
@@ -383,7 +443,7 @@ def compare(
     good = len(results) - len(problems)
     console.print(f"[green]{good} instances agree[/], {len(problems)} with problems.")
 
-    if registry:
+    if registry and not no_registry:
         reg = Registry.load(registry)
         for r in results:
             if r.key in reg and not r.error:

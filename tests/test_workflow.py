@@ -359,11 +359,13 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
     reg.save(registry)
 
     tagged = cad_model.with_name("machine_tagged.step")
-    output = run("check", tagged, "-r", registry, "--highlight", tmp_path / "h.json")
+    # The registry is found next to the model: no -r needed
+    output = run("check", tagged, "--highlight", tmp_path / "h.json")
+    assert f"Registry: {registry}" in output.replace("\n", "")
     assert "Instances beyond volume tolerance: 0" in output
 
     exported = tmp_path / "export.step"
-    run("export", tagged, "-r", registry, "-o", exported)
+    run("export", tagged, "-o", exported)
     cells = tmp_path / "export_cells.csv"
     mcnp = tmp_path / "model.mcnp"
     mcnp.write_text(models.mcnp_text())
@@ -374,8 +376,6 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
         mcnp,
         "-m",
         cells,
-        "-r",
-        registry,
         "--seed",
         "1",
         "--points",
@@ -403,6 +403,46 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
     )
     assert png.stat().st_size > 10_000
     assert "no cell" not in output
+
+
+def test_registry_is_found_only_when_unambiguous(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from radmodeling.cli import app
+
+    runner = CliRunner()
+
+    def run(*args):
+        return runner.invoke(app, [str(a) for a in args])
+
+    model = tmp_path / "model"
+    model.mkdir()
+    step = models.write_cad(model / "machine.step")
+    monkeypatch.chdir(tmp_path)  # the current folder is searched too
+    result = run("check", step)
+    assert result.exit_code == 1
+    assert "no *_registry.csv found" in result.output
+
+    assert run("init", step).exit_code == 0
+    registry = model / "machine_registry.csv"
+    assert run("check", step).exit_code == 0
+
+    (model / "other_registry.csv").write_bytes(registry.read_bytes())
+    result = run("check", step)
+    assert result.exit_code == 1
+    assert "several registries found" in result.output
+    assert run("check", step, "-r", registry).exit_code == 0
+
+    # --no-registry leaves the registry untouched
+    exported, cells = tmp_path / "export.step", tmp_path / "export_cells.csv"
+    assert run("export", step, "-r", registry, "-o", exported).exit_code == 0
+    mcnp = tmp_path / "model.mcnp"
+    mcnp.write_text(models.mcnp_text())
+    before = registry.read_bytes()
+    args = ("compare", exported, mcnp, "-m", cells, "--points", "2000")
+    result = run(*args, "--no-registry")
+    assert result.exit_code == 0, result.output
+    assert registry.read_bytes() == before
 
 
 def test_spaceclaim_loaders(tmp_path):
