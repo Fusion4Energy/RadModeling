@@ -12,17 +12,7 @@ def rm_highlight_problems():
         return
     with open(path) as infile:
         problems = json.load(infile)
-    by_id, _ = rm_bodies_by_id()
-    flagged = set()
-    lines = []
-    for category in sorted(problems):
-        ids = [i for i in problems[category] if i in by_id]
-        flagged.update(ids)
-        lines.append("%s: %d" % (category, len(problems[category])))
-    every = [b for bodies in by_id.values() for b in bodies]
-    rm_set_color(every, RM_GREY, transparent=True)
-    rm_set_color([b for i in flagged for b in by_id[i]], RM_RED)
-    rm_message("Components in red:\n" + "\n".join(lines))
+    rm_message("Components in red:\n" + "\n".join(rm_highlight(problems)))
 
 
 rm_highlight_problems()

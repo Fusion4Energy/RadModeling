@@ -11,7 +11,7 @@ keeps them linked: simplifying one bolt in a CAD program simplifies all four.
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from OCP.BRep import BRep_Builder
@@ -28,6 +28,7 @@ from OCP.TDocStd import TDocStd_Document
 from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS_Compound, TopoDS_Shape, TopoDS_Solid
 from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
+from OCP.XSControl import XSControl_TransferReader
 
 from radmodeling.cad.occ import GeometryMap, LabelSequence, solids
 
@@ -43,6 +44,8 @@ class Part:
     # Position of each node of path + name among its siblings: tells apart the
     # instances of an assembly, which all have the same path. Empty if not read.
     occurrence: tuple[int, ...] = ()
+    # Names of the solids themselves, in the order of `solids`, when they were read
+    body_names: tuple[str, ...] = ()
     extra: dict = field(default_factory=dict)
 
     @property
@@ -70,8 +73,17 @@ def _label_name(label: TDF_Label) -> str:
     return ""
 
 
-def read_step(path: str | os.PathLike) -> list[Part]:
-    """Read a STEP file and return its parts in document order."""
+def read_step(
+    path: str | os.PathLike, body_names: Callable[[Part], bool] | None = None
+) -> list[Part]:
+    """Read a STEP file and return its parts in document order.
+
+    Some CAD programs (SpaceClaim) name the solids themselves, and sometimes only them:
+    a single-body component may be written as a bare solid inside its parent. With
+    ``body_names``, the parts it selects get the names of their solids. Looking them
+    up is slow on large models (it grows with the square of the size), so select only
+    the parts that need them.
+    """
     path = os.fspath(path)
     if not os.path.exists(path):
         raise FileNotFoundError(path)
@@ -84,6 +96,7 @@ def read_step(path: str | os.PathLike) -> list[Part]:
         raise ValueError(f"Could not read STEP file: {path}")
     reader.Transfer(doc)
     shape_tool = XCAFDoc_DocumentTool.ShapeTool_s(doc.Main())
+    transfer = reader.Reader().WS().TransferReader()
 
     parts: list[Part] = []
 
@@ -113,15 +126,32 @@ def read_step(path: str | os.PathLike) -> list[Part]:
                 visit(children, (*path, name), node_location, (*occurrence, i))
                 continue
 
-            shape = XCAFDoc_ShapeTool.GetShape_s(label).Moved(node_location)
+            bare = XCAFDoc_ShapeTool.GetShape_s(label)
+            shape = bare.Moved(node_location)
             if not solids(shape):
                 continue  # sketches, points, surfaces... are not relevant here
-            parts.append(Part(name, path, shape, instance_name, (*occurrence, i)))
+            part = Part(name, path, shape, instance_name, (*occurrence, i))
+            if body_names is not None and body_names(part):
+                part.body_names = tuple(
+                    _solid_name(transfer, solid) for solid in solids(bare)
+                )
+            parts.append(part)
 
     free_shapes = LabelSequence()
     shape_tool.GetFreeShapes(free_shapes)
     visit(free_shapes, (), TopLoc_Location(), ())
     return parts
+
+
+def _solid_name(transfer: XSControl_TransferReader, solid: TopoDS_Shape) -> str:
+    """Name of the STEP entity a solid was read from (MANIFOLD_SOLID_BREP...)."""
+    # Mode 1 searches all the transferred entities: exact mode 0 fails after XCAF
+    entity = transfer.EntityFromShapeResult(solid, 1)
+    name = getattr(entity, "Name", None)
+    if name is None:
+        return ""
+    text = name()
+    return text.ToCString().strip() if text is not None else ""
 
 
 def compound(shapes: Sequence[TopoDS_Shape]) -> TopoDS_Compound:

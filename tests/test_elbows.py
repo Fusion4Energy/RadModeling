@@ -107,10 +107,10 @@ def test_cli_elbows_keeps_tags(tmp_path):
     from radmodeling.cli import app
 
     source, target = tmp_path / "in.step", tmp_path / "out.step"
-    write_step([Part("Elbow [rm:7]", ("Pipes",), elbow())], source)
+    write_step([Part("Elbow [rm7]", ("Pipes",), elbow())], source)
     result = CliRunner().invoke(app, ["elbows", str(source), "-o", str(target)])
     assert result.exit_code == 0, result.output
-    assert "Elbow [rm:7]: 90 deg elbow -> 5 solids" in result.output
+    assert "Elbow [rm7]: 90 deg elbow -> 5 solids" in result.output
     [part] = read_step(target)
-    assert part.name == "Elbow [rm:7]"
+    assert part.name == "Elbow [rm7]"
     assert len(part.solids) == 5

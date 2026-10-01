@@ -15,7 +15,7 @@ from radmodeling.cad.step import Part, read_step, write_step
 def test_step_round_trip_keeps_names_hierarchy_and_order(tmp_path):
     path = tmp_path / "a.step"
     parts = [
-        Part("Ñandú [rm:3]", ("Raíz", "Sub"), models.block()),
+        Part("Ñandú [rm3]", ("Raíz", "Sub"), models.block()),
         Part("Pipe", ("Raíz",), models.pipe()),
         Part("Bolts", ("Raíz", "Sub"), models.bolts()),
     ]
@@ -25,7 +25,7 @@ def test_step_round_trip_keeps_names_hierarchy_and_order(tmp_path):
     read = read_step(path)
     # Parts come grouped by assembly, in the order the assemblies were created
     assert [(p.path, p.name) for p in read] == [
-        (("Raíz", "Sub"), "Ñandú [rm:3]"),
+        (("Raíz", "Sub"), "Ñandú [rm3]"),
         (("Raíz", "Sub"), "Bolts"),
         (("Raíz",), "Pipe"),
     ]
@@ -37,10 +37,10 @@ def test_step_round_trip_keeps_names_hierarchy_and_order(tmp_path):
 def test_instances_stay_linked_and_keep_their_names(tmp_path):
     box = BRepPrimAPI_MakeBox(10, 10, 10).Shape()
     parts = [
-        Part("Bolt [rm:1]", ("Asm",), models.placed(box, 20 * i, 0)) for i in range(3)
+        Part("Bolt [rm1]", ("Asm",), models.placed(box, 20 * i, 0)) for i in range(3)
     ]
     # Same geometry under another name: it needs its own product to keep its name
-    parts.append(Part("Spacer [rm:2]", ("Asm",), models.placed(box, 0, 50)))
+    parts.append(Part("Spacer [rm2]", ("Asm",), models.placed(box, 0, 50)))
     names = [p.name for p in parts]
     corners = [bounding_box(p.shape)[:2] for p in parts]
 

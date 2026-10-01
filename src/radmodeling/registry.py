@@ -1,6 +1,6 @@
 """The component registry: one row per body, kept as an Excel-friendly CSV.
 
-Components are identified by an integer ID embedded in their name as ``[rm:ID]``. The
+Components are identified by an integer ID embedded in their name as ``[rmID]``. The
 tag survives STEP round trips through any CAD program, so simplified models can always
 be matched back to the original components, no matter how the user renames or moves
 them in the assembly tree.
@@ -23,11 +23,12 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, fields
 from typing import NamedTuple
 
-TAG_RE = re.compile(r"\s*\[rm:(\d+)\]")
+# No colon ("[rm:12]"): SpaceClaim's STEP export drops colons from names
+TAG_RE = re.compile(r"\s*\[rm(\d+)\]")
 
 
 def tag_name(name: str, component_id: int) -> str:
-    return f"{TAG_RE.sub('', name).strip()} [rm:{component_id}]"
+    return f"{TAG_RE.sub('', name).strip()} [rm{component_id}]"
 
 
 def untag_name(name: str) -> str:

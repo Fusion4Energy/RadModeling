@@ -14,7 +14,7 @@ Layout
 
    src/radmodeling/
      cli.py            the radmod command line interface
-     registry.py       component registry and [rm:ID] tags
+     registry.py       component registry and [rmID] tags
      workflow.py       init, check and export
      cellmap.py        solid order <-> registry rows (ID, instance)
      compare.py        CAD vs MCNP sampling and slices

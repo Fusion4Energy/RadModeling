@@ -14,7 +14,7 @@ keep all code in `radmodeling`.
 
 ## Architecture
 
-- Components are identified by `[rm:ID]` tags in CAD names (`registry.py`), never by
+- Components are identified by `[rmID]` tags in CAD names (`registry.py`), never by
   position or name. The registry CSV is the single source of truth for materials and
   volumes; computed columns (`volume_diff_pct`, `dcf`) are derived on load and save.
 - The tag is on the part definition: instances of a part share it and stay linked
@@ -41,5 +41,6 @@ keep all code in `radmodeling`.
 
 - CAD lengths in mm, MCNP in cm; registry volumes in cm3 (`MM_PER_CM` in compare).
 - Escape user strings in rich output with `esc()` in `cli.py`: tags look like markup.
+- Tags are `[rm12]`, not `[rm:12]`: SpaceClaim's STEP export drops colons from names.
 - Slice colours follow the validated categorical palette in `plot.py`; red is
   reserved for problems (overlaps, mismatches).

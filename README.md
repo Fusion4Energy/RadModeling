@@ -25,7 +25,7 @@ model.mcnp ──radmod compare──▶ CAD vs MCNP volumes, density correction
            ──radmod slice─────▶ slice plots with the CAD overlaid
 ```
 
-* **Stable component IDs**: tags like `Pump casing [rm:12]` in the component names
+* **Stable component IDs**: tags like `Pump casing [rm12]` in the component names
   survive any CAD program, so simplified models always match the original components.
 * **One registry**: an Excel-friendly CSV with materials, densities, volumes and
   density correction factors.

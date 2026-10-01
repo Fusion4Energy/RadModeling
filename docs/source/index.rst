@@ -23,7 +23,7 @@ MCNP geometry obtained from them. It is a Python package with a command line too
 What it gives you
 -----------------
 
-* **Stable component IDs.** Every component gets a tag such as ``Pump casing [rm:12]``
+* **Stable component IDs.** Every component gets a tag such as ``Pump casing [rm12]``
   in its name. Tags survive STEP round trips through any CAD program, so the simplified
   model is always matched back to the original components, whatever is renamed or
   moved in the assembly tree.

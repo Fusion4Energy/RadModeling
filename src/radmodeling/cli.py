@@ -76,6 +76,15 @@ def _registry(
     return None
 
 
+def _writable(path: Path) -> None:
+    """Fail now rather than after the work if the registry cannot be saved."""
+    try:
+        with open(path, "a", encoding="utf-8-sig"):
+            pass
+    except PermissionError:
+        _fail(f"cannot write {path}: close it in Excel (or any other program)")
+
+
 def _ids(text: str | None) -> list[int] | None:
     if not text:
         return None
@@ -107,7 +116,7 @@ def init(
 
     All the instances of a part share its tag and stay linked, and each instance gets
     its own row in the registry. Simplify the tagged STEP in any CAD program. The
-    '[rm:ID]' tags in the component names must be kept; everything else (names,
+    '[rmID]' tags in the component names must be kept; everything else (names,
     hierarchy) can change freely.
     """
     from radmodeling import workflow
@@ -149,6 +158,7 @@ def check(
 
     registry = _registry(registry, [simplified])
     assert registry is not None
+    _writable(registry)
     reg = Registry.load(registry)
     with console.status("Analysing the simplified model..."):
         result = workflow.check(simplified, reg, tolerance)
@@ -246,6 +256,7 @@ def export(
     cell_map = cell_map or output.with_name(f"{output.stem}_cells.csv")
     registry = _registry(registry, [simplified])
     assert registry is not None
+    _writable(registry)
     reg = Registry.load(registry)
     with console.status("Exporting..."):
         try:
@@ -383,7 +394,9 @@ def compare(
 
     if not no_registry:
         registry = _registry(registry, [step, mcnp, cell_map], required=False)
-        if registry is None:
+        if registry is not None:
+            _writable(registry)
+        else:
             console.print(
                 "[yellow]No registry found: MCNP volumes will not be saved[/]"
             )
@@ -733,6 +746,7 @@ LOADER = """# Python Script, API Version = {api}
 import os
 
 RADMODELING_SPACECLAIM = r"{folder}"
+RADMODELING_PYTHON = r"{python}"  # runs radmod for the tools that need it
 execfile(os.path.join(RADMODELING_SPACECLAIM, "_rm.py"))
 execfile(os.path.join(RADMODELING_SPACECLAIM, "{script}"))
 """
@@ -751,6 +765,8 @@ def spaceclaim_loaders(
     install (pip install -e) every 'git pull' updates the tools in SpaceClaim with no
     need to publish them again.
     """
+    import sys
+
     import radmodeling
 
     folder = Path(radmodeling.__file__).resolve().parent / "spaceclaim"
@@ -762,7 +778,11 @@ def spaceclaim_loaders(
         path = output / f"RadModeling - {tool}.py"
         path.write_text(
             LOADER.format(
-                api=api_version, tool=tool, folder=folder, script=script.name
+                api=api_version,
+                tool=tool,
+                folder=folder,
+                python=sys.executable,
+                script=script.name,
             ),
             encoding="utf-8",
         )

@@ -29,7 +29,7 @@ from OCP.TopoDS import TopoDS_Shape, TopoDS_Solid
 
 from radmodeling.cad.analysis import ShapeReport, analyse
 from radmodeling.cad.occ import GeometryMap, volume_and_centroid
-from radmodeling.cad.step import Part, read_step, write_step
+from radmodeling.cad.step import Part, compound, read_step, write_step
 from radmodeling.cellmap import CellMap
 from radmodeling.compare import MM_PER_CM
 from radmodeling.registry import (
@@ -108,13 +108,43 @@ def _combine(reports: list[ShapeReport]) -> ShapeReport:
     )
 
 
+def read_model(path: str | os.PathLike) -> list[Part]:
+    """Read a model to match with the registry.
+
+    The solids of untagged parts are read with their own names, where SpaceClaim may
+    have left the tag of a component it turned into a bare body.
+    """
+    return read_step(path, body_names=lambda p: find_id(p.names) is None)
+
+
+def _split_tagged_bodies(part: Part) -> list[Part]:
+    """Make the tagged solids of an untagged part parts of their own."""
+    tagged = [k for k, name in enumerate(part.body_names) if TAG_RE.search(name)]
+    if not tagged:
+        return [part]
+    solids = part.solids
+    inner = (*part.path, part.name)
+    result = [
+        Part(part.body_names[k], inner, solids[k], occurrence=(*part.occurrence, k))
+        for k in tagged
+    ]
+    rest = [s for k, s in enumerate(solids) if k not in tagged]
+    if rest:
+        untagged = compound(rest)
+        result.insert(
+            0, Part(part.name, part.path, untagged, part.instance_name, part.occurrence)
+        )
+    return result
+
+
 def find_instances(parts: Sequence[Part], measure: Measurer) -> list[Instance]:
     """Group the parts of a model into the instances of the components.
 
-    The instance is the deepest tagged node: a tagged part, or every occurrence of a
-    tagged assembly with all the parts below it. Untagged parts are instances of their
-    own with no ID.
+    The instance is the deepest tagged node: a tagged part or solid, or every
+    occurrence of a tagged assembly with all the parts below it. Untagged parts are
+    instances of their own with no ID.
     """
+    parts = [p for part in parts for p in _split_tagged_bodies(part)]
     groups: dict[object, Instance] = {}
     for index, part in enumerate(parts):
         names = part.names
@@ -345,7 +375,7 @@ def check(
     analyse_geometry: bool = True,
 ) -> CheckResult:
     """Match a simplified model with the registry and update the simplified volumes."""
-    instances = find_instances(read_step(simplified_step), Measurer(analyse_geometry))
+    instances = find_instances(read_model(simplified_step), Measurer(analyse_geometry))
     matching = match_instances(instances, registry)
     for component in registry:
         instance = matching.found.get(component.key)
@@ -387,7 +417,7 @@ def export(
         The cell map and the keys of the rows that were added to the registry.
     """
     matching = match_instances(
-        find_instances(read_step(simplified_step), Measurer(analyse_geometry=False)),
+        find_instances(read_model(simplified_step), Measurer(analyse_geometry=False)),
         registry,
     )
     if matching.unknown:

@@ -13,7 +13,7 @@ a ``radmod`` command; ``radmod <command> --help`` lists all the options.
 
 This writes ``machine_tagged.step`` and ``machine_registry.csv``. Every component (every
 part of the assembly that holds solids) gets a unique ID in its name, for example
-``Pump casing [rm:12]``.
+``Pump casing [rm12]``.
 
 A part placed several times, such as a bolt used 20 times, is one component: all its
 instances share the tag and **stay linked** in the tagged model, so simplifying one
@@ -49,7 +49,7 @@ the same component can have different materials.
    * - Column
      - Meaning
    * - ``id``
-     - Component ID, the number in the ``[rm:ID]`` tag. Never change it.
+     - Component ID, the number in the ``[rmID]`` tag. Never change it.
    * - ``instance``
      - Instance number, 1 for components placed once. Never change it.
    * - ``level_1``, ``level_2``...
@@ -88,7 +88,7 @@ back by Excel with semicolons, decimal commas or Windows encodings are read fine
 -----------
 
 Simplify ``machine_tagged.step`` in SpaceClaim or any other CAD program. The only rule
-is to **keep the** ``[rm:ID]`` **tags in the component names**; renaming the rest,
+is to **keep the** ``[rmID]`` **tags in the component names**; renaming the rest,
 moving components in the tree, splitting or merging bodies within a component are all
 fine. The SpaceClaim tools (:doc:`spaceclaim`) help along the way: colour the
 components whose volume drifted, recover a volume by extruding faces, show components
@@ -116,6 +116,10 @@ instance and a single body are matched anyway and reported as moved.
 
 ``-r`` can be left out when ``machine_registry.csv`` is the only registry next to the
 model or in the current folder: every command finds it and prints which one it used.
+
+``radmod`` reads STEP files, not SpaceClaim's ``.scdocx``. Export a STEP copy to check
+it, or use the *Check model* SpaceClaim tool (:doc:`spaceclaim`), which does the export
+and the check in one click.
 
 Reports the instances beyond the volume tolerance, and the geometry that will cause
 trouble in the conversion: surfaces a CSG converter cannot translate (splines, offset

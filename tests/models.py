@@ -94,7 +94,7 @@ def write_instanced_assembly(path: Path) -> Path:
         TDataStd_Name.Set_s(label, TCollection_ExtendedString(text, True))
 
     screw = tool.NewShape()
-    name(screw, "Screw [rm:3]")
+    name(screw, "Screw [rm3]")
     bodies = (("Head", cylinder(0, 0, 20, 8, 5)), ("Shank", cylinder(0, 0, 0, 4, 20)))
     for body, shape in bodies:
         label = tool.AddShape(shape, False, False)
@@ -104,7 +104,7 @@ def write_instanced_assembly(path: Path) -> Path:
     name(root, "Machine")
     for x in (0, 100, 200):
         instance = tool.AddComponent(root, screw, translation(x, 0))
-        name(instance, "Screw [rm:3]")
+        name(instance, "Screw [rm3]")
     tool.UpdateAssemblies()
     write_document(doc, path)
     return path

@@ -39,6 +39,16 @@ material.
 Tools
 -----
 
+**Check model**
+   Runs ``radmod check`` on the open document without leaving SpaceClaim: saves a
+   STEP copy next to it (``<name>_check.step``), checks it against the registry,
+   shows the report and colours the components with problems in red. The document is
+   not changed, so the ``.scdocx`` stays the working file. The registry must not be
+   open in Excel, as the check updates it. SpaceClaim waits while the check runs.
+
+   It runs ``radmod`` with the Python that wrote the loaders. Loaders written before
+   this tool existed do not know it: write them again and publish *Check model*.
+
 **Check volumes**
    Colours in red the instances whose volume differs from the original by more
    than 1 %, blue transparent the rest, and grey the untagged bodies.

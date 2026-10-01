@@ -23,9 +23,9 @@ from radmodeling.registry import Component, Key, Registry, find_id, tag_name
 
 
 def test_tags():
-    assert tag_name("Pump [rm:3]", 7) == "Pump [rm:7]"
-    assert find_id(["Root [rm:1]", "Body"]) == 1
-    assert find_id(["Root [rm:1]", "Child [rm:2]", "Solid1"]) == 2
+    assert tag_name("Pump [rm3]", 7) == "Pump [rm7]"
+    assert find_id(["Root [rm1]", "Body"]) == 1
+    assert find_id(["Root [rm1]", "Child [rm2]", "Solid1"]) == 2
     assert find_id(["Root", "x"]) is None
 
 
@@ -75,7 +75,7 @@ def simplify(tagged, output):
     for part in read_step(tagged):
         if "Ball" in part.name:
             ball = BRepPrimAPI_MakeSphere(gp_Pnt(50, 50, 100), 24).Shape()
-            parts.append(Part("Simplified sphere [rm:3]", ("New", "Misc"), ball))
+            parts.append(Part("Simplified sphere [rm3]", ("New", "Misc"), ball))
         else:
             parts.append(Part(part.name, ("New",), part.shape))
     parts.append(Part("Shield", ("New",), models.cylinder(300, 0, 0, 10, 10)))
@@ -111,12 +111,12 @@ def test_init_check_export(tmp_path, cad_model):
     assert CellMap.load(tmp_path / "c.csv").keys == cell_map.keys
     # The exported file is flat and in cell order
     assert [p.name for p in read_step(output)] == [
-        "Block [rm:1]",
-        "Pipe [rm:2]",
-        "Ball [rm:3]",
-        "Bolts #1 [rm:4]",
-        "Bolts #2 [rm:4]",
-        "Shield [rm:5]",
+        "Block [rm1]",
+        "Pipe [rm2]",
+        "Ball [rm3]",
+        "Bolts #1 [rm4]",
+        "Bolts #2 [rm4]",
+        "Shield [rm5]",
     ]
 
 
@@ -156,7 +156,7 @@ def test_instances_are_simplified_once_and_tracked_one_by_one(tmp_path):
     assert registry[2, 6].centre_cm == pytest.approx((8, 20, 1))
     # The tagged bolts are still instances of one product
     bolts = [p for p in read_step(tagged) if "Bolt" in p.name]
-    assert {p.name for p in bolts} == {"Bolt [rm:2]"}
+    assert {p.name for p in bolts} == {"Bolt [rm2]"}
     definition: GeometryMap[bool] = GeometryMap()
     definition[bolts[0].shape] = True
     assert all(p.shape in definition for p in bolts)
@@ -211,6 +211,25 @@ def test_tagged_assemblies_are_instances(tmp_path):
     assert {k: i.centre_cm[0] for k, i in matching.found.items() if i.centre_cm} == (
         pytest.approx({(3, 1): 20, (3, 2): 0, (3, 3): 10}, abs=1e-6)
     )
+
+
+def test_tags_left_only_on_bodies_are_found(tmp_path):
+    """SpaceClaim may write a component as a bare solid that alone keeps the tag."""
+    original = tmp_path / "pipe.step"
+    write_step([Part("Pipe", ("Machine",), models.pipe())], original)
+    tagged, registry_csv = tmp_path / "tagged.step", tmp_path / "registry.csv"
+    registry = workflow.init(original, tagged, registry_csv)
+    text = tagged.read_text().replace("'Pipe [rm1]'", "'SOLID'")
+    text = text.replace("MANIFOLD_SOLID_BREP(''", "MANIFOLD_SOLID_BREP('Pipe [rm1]'")
+    assert text.count("Pipe [rm1]") == 1
+    simplified = tmp_path / "simplified.step"
+    simplified.write_text(text)
+    assert [p.name for p in read_step(simplified)] == ["SOLID"]
+
+    matching = workflow.check(simplified, registry).matching
+    assert list(matching.found) == [(1, 1)]
+    assert matching.untagged == []
+    assert matching.found[Key(1)].name == "Pipe"
 
 
 def test_far_instances_are_not_matched_unless_unambiguous():
@@ -444,8 +463,20 @@ def test_registry_is_found_only_when_unambiguous(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert registry.read_bytes() == before
 
+    # A registry that cannot be written (open in Excel) stops before any work
+    registry.chmod(0o444)
+    try:
+        result = run("export", step, "-r", registry, "-o", tmp_path / "again.step")
+    finally:
+        registry.chmod(0o644)
+    assert result.exit_code == 1
+    assert "close it in Excel" in result.output
+    assert not (tmp_path / "again.step").exists()
+
 
 def test_spaceclaim_loaders(tmp_path):
+    import sys
+
     from typer.testing import CliRunner
 
     from radmodeling.cli import app
@@ -454,8 +485,11 @@ def test_spaceclaim_loaders(tmp_path):
     assert result.exit_code == 0, result.output
     loaders = sorted(p.name for p in tmp_path.iterdir())
     assert "RadModeling - Check volumes.py" in loaders
+    assert "RadModeling - Check model.py" in loaders
     text = (tmp_path / "RadModeling - Check volumes.py").read_text()
     assert text.startswith("# Python Script, API Version = V241")
+    # 'Check model' runs radmod with the Python that wrote the loaders
+    assert f'RADMODELING_PYTHON = r"{sys.executable}"' in text
     folder = text.split('RADMODELING_SPACECLAIM = r"')[1].split('"')[0]
     for script in ("_rm.py", "check_volumes.py"):
         assert (Path(folder) / script).exists()

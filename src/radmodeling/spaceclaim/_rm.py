@@ -15,10 +15,12 @@ import clr
 
 clr.AddReference("System.Drawing")
 clr.AddReference("System.Windows.Forms")
+from System.Diagnostics import Process, ProcessStartInfo  # noqa: E402
 from System.Drawing import Color  # noqa: E402
+from System.Text import Encoding  # noqa: E402
 from System.Windows.Forms import DialogResult, OpenFileDialog  # noqa: E402
 
-RM_TAG = re.compile(r"\[rm:(\d+)\]")
+RM_TAG = re.compile(r"\[rm(\d+)\]")
 RM_RED = Color.FromArgb(208, 59, 59)
 RM_BLUE = Color.FromArgb(42, 120, 214)
 RM_GREY = Color.FromArgb(185, 184, 179)
@@ -191,6 +193,52 @@ def rm_instance_volume(rows):
     if (max(volumes) - min(volumes)) / max(volumes) * 100 > RM_SAME_VOLUME_PCT:
         return None, "has instances with different original volumes"
     return sum(volumes) / len(volumes), None
+
+
+def rm_highlight(problems):
+    """Colour in red the components listed per category, the rest grey transparent.
+
+    Returns one line per category with its number of components.
+    """
+    by_id, _ = rm_bodies_by_id()
+    flagged = set()
+    lines = []
+    for category in sorted(problems):
+        ids = [i for i in problems[category] if i in by_id]
+        flagged.update(ids)
+        lines.append("%s: %d" % (category, len(problems[category])))
+    every = [b for bodies in by_id.values() for b in bodies]
+    rm_set_color(every, RM_GREY, transparent=True)
+    rm_set_color([b for i in flagged for b in by_id[i]], RM_RED)
+    return lines
+
+
+def rm_run_radmod(arguments):
+    """Run 'python -m radmod' with the Python that wrote the loaders.
+
+    Returns the exit code and the output. SpaceClaim waits until it finishes.
+    """
+    python = globals().get("RADMODELING_PYTHON")
+    if not python:
+        raise ValueError(
+            "This tool needs loaders written by a recent radmodeling: run "
+            "'radmod spaceclaim-loaders' again and publish the tools again."
+        )
+    info = ProcessStartInfo(python)
+    info.Arguments = " ".join('"%s"' % a for a in ["-m", "radmod"] + arguments)
+    info.UseShellExecute = False
+    info.CreateNoWindow = True
+    info.RedirectStandardOutput = True
+    info.RedirectStandardError = True
+    info.StandardOutputEncoding = Encoding.UTF8
+    info.StandardErrorEncoding = Encoding.UTF8
+    info.EnvironmentVariables["PYTHONUTF8"] = "1"
+    info.EnvironmentVariables["COLUMNS"] = "100"
+    process = Process.Start(info)
+    errors = process.StandardError.ReadToEndAsync()  # both pipes must be drained
+    output = process.StandardOutput.ReadToEnd()
+    process.WaitForExit()
+    return process.ExitCode, output + errors.Result
 
 
 def rm_set_color(bodies, color, transparent=False):
