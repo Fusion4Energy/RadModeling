@@ -16,7 +16,7 @@ Layout
      cli.py            the radmod command line interface
      registry.py       component registry and [rm:ID] tags
      workflow.py       init, check and export
-     cellmap.py        solid order <-> component IDs
+     cellmap.py        solid order <-> registry rows (ID, instance)
      compare.py        CAD vs MCNP sampling and slices
      plot.py           slice rendering
      fmesh.py          FMESH cards from boxes

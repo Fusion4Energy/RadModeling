@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Generic, TypeVar
 
 from OCP.Bnd import Bnd_Box
 from OCP.BRepBndLib import BRepBndLib
@@ -10,6 +11,7 @@ from OCP.BRepGProp import BRepGProp
 from OCP.GProp import GProp_GProps
 from OCP.TopAbs import TopAbs_FACE, TopAbs_ShapeEnum, TopAbs_SOLID
 from OCP.TopExp import TopExp_Explorer
+from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS, TopoDS_Face, TopoDS_Shape, TopoDS_Solid
 
 try:  # OCP >= 8
@@ -48,6 +50,42 @@ def volume_mm3(shape: TopoDS_Shape) -> float:
     return props.Mass()
 
 
+def volume_and_centroid(shape: TopoDS_Shape) -> tuple[float, tuple[float, ...]]:
+    """Volume and centre of mass of a shape, in model units."""
+    props = GProp_GProps()
+    BRepGProp.VolumeProperties_s(shape, props)
+    centre = props.CentreOfMass()
+    return props.Mass(), (centre.X(), centre.Y(), centre.Z())
+
+
+T = TypeVar("T")
+
+
+class GeometryMap(Generic[T]):
+    """A dict keyed by the geometry of shapes (their ``TShape``), not their placement.
+
+    Instances of the same CAD part share their geometry and only differ in placement.
+    """
+
+    def __init__(self) -> None:
+        self._buckets: dict[int, list[tuple[TopoDS_Shape, T]]] = {}
+
+    def _bucket(self, shape: TopoDS_Shape) -> list[tuple[TopoDS_Shape, T]]:
+        # OCP's == is object identity: hash to a bucket, then compare the TShape
+        return self._buckets.setdefault(hash(shape.Located(TopLoc_Location())), [])
+
+    def get(self, shape: TopoDS_Shape) -> T | None:
+        return next((v for s, v in self._bucket(shape) if shape.IsPartner(s)), None)
+
+    def __contains__(self, shape: TopoDS_Shape) -> bool:
+        return any(shape.IsPartner(s) for s, _ in self._bucket(shape))
+
+    def __setitem__(self, shape: TopoDS_Shape, value: T) -> None:
+        bucket = self._bucket(shape)
+        bucket[:] = [(s, v) for s, v in bucket if not shape.IsPartner(s)]
+        bucket.append((shape, value))
+
+
 def bounding_box(
     shape: TopoDS_Shape,
 ) -> tuple[float, float, float, float, float, float]:
@@ -59,6 +97,7 @@ def bounding_box(
 
 
 __all__ = [
+    "GeometryMap",
     "LabelSequence",
     "bounding_box",
     "explore",
@@ -67,5 +106,6 @@ __all__ = [
     "to_edge",
     "to_face",
     "to_solid",
+    "volume_and_centroid",
     "volume_mm3",
 ]

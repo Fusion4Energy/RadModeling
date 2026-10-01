@@ -27,9 +27,13 @@ What it gives you
   in its name. Tags survive STEP round trips through any CAD program, so the simplified
   model is always matched back to the original components, whatever is renamed or
   moved in the assembly tree.
-* **One registry.** An Excel-friendly CSV with one row per component: material,
+* **Linked instances.** All the instances of a repeated part share one tag and stay
+  linked in the CAD program, so each part is simplified only once. Each instance is
+  still tracked on its own, down to its MCNP cells.
+* **One registry.** An Excel-friendly CSV with one row per instance: material,
   density or mass, original, simplified and MCNP volumes, and the resulting density
-  correction factor.
+  correction factor. The assembly tree is in one column per level, ready for Excel's
+  filters.
 * **CAD vs MCNP comparison without running MCNP.** RadModeling evaluates the MCNP
   cells itself, so it measures the volume of each component's cells, how much of it
   disagrees with the CAD, and plots slices with the CAD contours on top.

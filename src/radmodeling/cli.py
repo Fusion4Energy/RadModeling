@@ -42,6 +42,10 @@ def _ids(text: str | None) -> list[int] | None:
     return [int(t) for t in text.replace(",", " ").split()]
 
 
+def _keys_text(keys) -> str:
+    return ", ".join(map(str, keys))
+
+
 # --- CAD workflow --------------------------------------------------------------------
 
 
@@ -59,10 +63,12 @@ def init(
         bool, typer.Option(help="Overwrite an existing registry.")
     ] = False,
 ) -> None:
-    """Tag every component with a unique ID and create the registry.
+    """Tag every part with a unique ID and create the registry.
 
-    Simplify the tagged STEP in any CAD program. The '[rm:ID]' tags in the component
-    names must be kept; everything else (names, hierarchy) can change freely.
+    All the instances of a part share its tag and stay linked, and each instance gets
+    its own row in the registry. Simplify the tagged STEP in any CAD program. The
+    '[rm:ID]' tags in the component names must be kept; everything else (names,
+    hierarchy) can change freely.
     """
     from radmodeling import workflow
 
@@ -74,7 +80,8 @@ def init(
         result = workflow.init(original, tagged, registry, per_solid=per_solid)
     total = sum(c.original_volume_cm3 or 0 for c in result)
     console.print(
-        f"[green]Tagged {len(result)} components[/] ({total:.6g} cm3).\n"
+        f"[green]Tagged {len(result.ids)} components[/] with {len(result)} instances "
+        f"({total:.6g} cm3).\n"
         f"  Tagged model: {esc(str(tagged))}\n  Registry:     {esc(str(registry))}\n"
         "Fill the 'material' column (and density or mass) of the registry, then "
         "simplify the tagged model."
@@ -106,14 +113,17 @@ def check(
     reg.save(registry)
 
     exceeding = result.exceeding()
+    matching = result.matching
+    # Component IDs for the CAD adapters, which cannot tell instances apart
     issues = {
-        "volume": [c.id for c in exceeding],
+        "volume": sorted({c.id for c in exceeding}),
         "unconvertible": result.with_issue(lambda r: r.unconvertible_surfaces),
         "torus": result.with_issue(lambda r: r.has_torus),
         "invalid": result.with_issue(lambda r: not r.valid),
-        "duplicated": result.duplicated(),
-        "deleted": result.missing_ids,
-        "unknown": result.unknown_ids,
+        "deleted": sorted({k.id for k in matching.missing}),
+        "extra": sorted({i.id for i in matching.extra if i.id is not None}),
+        "moved": sorted({k.id for k in matching.moved}),
+        "unknown": sorted({i.id for i in matching.unknown if i.id is not None}),
     }
 
     table = Table(title=f"Components beyond ±{tolerance:g}% volume", show_lines=False)
@@ -121,7 +131,7 @@ def check(
         table.add_column(column, justify="right" if "cm3" in column else "left")
     for c in sorted(exceeding, key=lambda c: -abs(c.volume_diff_pct or 0))[:30]:
         table.add_row(
-            str(c.id),
+            str(c.key),
             esc(c.name),
             f"{c.original_volume_cm3:.6g}",
             f"{c.simplified_volume_cm3:.6g}",
@@ -132,14 +142,19 @@ def check(
         if len(exceeding) > 30:
             console.print(f"... and {len(exceeding) - 30} more (see the registry)")
 
-    def line(label: str, ids: list[int], hint: str = "") -> None:
-        style = "green" if not ids else "yellow"
-        shown = ", ".join(map(str, ids[:20])) + (" ..." if len(ids) > 20 else "")
-        console.print(f"[{style}]{label}: {len(ids)}[/] {shown} {hint if ids else ''}")
+    def line(label: str, items: list, hint: str = "") -> None:
+        style = "green" if not items else "yellow"
+        shown = _keys_text(items[:20]) + (" ..." if len(items) > 20 else "")
+        console.print(
+            f"[{style}]{label}: {len(items)}[/] {shown} {hint if items else ''}"
+        )
 
-    found = len(result.states)
-    console.print(f"Components found: {found} of {len(reg)} in the registry")
-    line("Beyond volume tolerance", issues["volume"])
+    found = len(matching.found)
+    console.print(
+        f"Instances found: {found} of {len(reg)} in the registry "
+        f"({len(reg.ids)} components)"
+    )
+    line("Instances beyond volume tolerance", [c.key for c in exceeding])
     line(
         "Surfaces a CSG converter cannot translate",
         issues["unconvertible"],
@@ -147,14 +162,20 @@ def check(
     )
     line("With tori", issues["torus"], "(consider 'radmod elbows')")
     line("Invalid solids", issues["invalid"])
-    line("Tag in several places", issues["duplicated"], "(copied components?)")
-    line("Deleted", issues["deleted"])
+    line("Deleted instances", matching.missing)
+    line(
+        "Extra instances",
+        sorted(i.id for i in matching.extra if i.id is not None),
+        "(copies: they become new instances on export)",
+    )
+    line("Moved instances", matching.moved, "(further than their own size)")
     line("Tags not in the registry", issues["unknown"])
+    untagged = [i.name for i in matching.untagged]
     console.print(
-        f"[{'green' if not result.untagged else 'yellow'}]Untagged parts: "
-        f"{len(result.untagged)}[/] "
-        + esc(", ".join(p.name for p in result.untagged[:10]))
-        + (" (they get new IDs on export)" if result.untagged else "")
+        f"[{'green' if not untagged else 'yellow'}]Untagged parts: "
+        f"{len(untagged)}[/] "
+        + esc(", ".join(untagged[:10]))
+        + (" (they get new IDs on export)" if untagged else "")
     )
     if highlight:
         highlight.write_text(json.dumps(issues, indent=1))
@@ -174,8 +195,8 @@ def export(
 ) -> None:
     """Write the STEP file for the CAD-to-MCNP converter and its cell map.
 
-    Solids are written one per product, sorted by component ID: the n-th solid
-    becomes the n-th cell of the converted model.
+    Solids are written one per product, sorted by component ID and instance: the n-th
+    solid becomes the n-th cell of the converted model.
     """
     from radmodeling import workflow
     from radmodeling.registry import Registry
@@ -189,14 +210,14 @@ def export(
             _fail(str(exc))
     reg.save(registry)
     console.print(
-        f"[green]Exported {len(result.component_ids)} solids[/] of "
-        f"{len(set(result.component_ids))} components.\n"
+        f"[green]Exported {len(result.keys)} solids[/] of {len(set(result.keys))} "
+        f"instances.\n"
         f"  STEP:     {esc(str(output))}\n  Cell map: {esc(str(cell_map))}"
     )
     if added:
         console.print(
-            f"[yellow]{len(added)} untagged parts were added to the registry as new "
-            f"components:[/] {added}. Give them a material."
+            f"[yellow]{len(added)} new bodies were added to the registry with status "
+            f"'new':[/] {_keys_text(added)}. Check their material."
         )
 
 
@@ -267,8 +288,8 @@ def materials(
             "[yellow]No composition in the library, add their cards by hand:[/] "
             f"{esc(str(report.without_composition))}"
         )
-    for component_id, value in report.dcf_out_of_range:
-        console.print(f"[yellow]Component {component_id}: unusual DCF {value:.3f}[/]")
+    for key, value in report.dcf_out_of_range:
+        console.print(f"[yellow]Component {key}: unusual DCF {value:.3f}[/]")
     console.print(f"[green]Written[/] {esc(str(output))}")
 
 
@@ -284,7 +305,8 @@ def compare(
     first_cell: FirstCellOption = 1,
     points: Annotated[int, typer.Option(help="Sample points per component.")] = 100_000,
     components: Annotated[
-        str | None, typer.Option(help="Only these component IDs, e.g. '3,7,12'.")
+        str | None,
+        typer.Option(help="Only these components, e.g. '3,7.2' (7.2: instance 2)."),
     ] = None,
     report: Annotated[
         Path | None, typer.Option(help="Write the full results as CSV.")
@@ -294,40 +316,42 @@ def compare(
     ] = 1.0,
     seed: Annotated[int | None, typer.Option(help="Random seed.")] = None,
 ) -> None:
-    """Compare every component's CAD solids with its MCNP cells by point sampling.
+    """Compare every instance's CAD solids with its MCNP cells by point sampling.
 
-    Gives the MCNP volume of each component (for the density correction factors) and
+    Gives the MCNP volume of each instance (for the density correction factors) and
     the volume where CAD and MCNP disagree.
     """
-    from radmodeling.cad.step import read_step
     from radmodeling.cellmap import CellMap
     from radmodeling.compare import compare_component
     from radmodeling.mcnp.geometry import Geometry
-    from radmodeling.registry import Registry
-    from radmodeling.workflow import group_by_component
+    from radmodeling.registry import Key, Registry
+    from radmodeling.workflow import exported_solids
 
     cmap = CellMap.load(cell_map)
-    cells_by_component = cmap.cells_by_component(first_cell)
+    cells_by_instance = cmap.cells_by_instance(first_cell)
     with console.status("Reading the models..."):
-        states, _ = group_by_component(read_step(step))
+        try:
+            solids = exported_solids(step, cmap)
+        except ValueError as exc:
+            _fail(str(exc))
         geometry = Geometry.from_file(mcnp)
-    selected = _ids(components) or sorted(cells_by_component)
+    selected = sorted(cells_by_instance)
+    if components:
+        wanted = components.replace(",", " ").split()
+        ids = {int(t) for t in wanted if "." not in t}
+        keys = {Key.parse(t) for t in wanted if "." in t}
+        selected = [k for k in selected if k.id in ids or k in keys]
     rng = np.random.default_rng(seed)
 
     results = []
     with console.status("") as status:
-        for i, component_id in enumerate(selected, 1):
-            status.update(f"Component {component_id} ({i}/{len(selected)})")
-            if component_id not in states:
-                console.print(
-                    f"[yellow]Component {component_id} not in {esc(str(step))}[/]"
-                )
-                continue
+        for i, key in enumerate(selected, 1):
+            status.update(f"Component {key} ({i}/{len(selected)})")
             results.append(
                 compare_component(
-                    component_id,
-                    states[component_id].solids,
-                    cells_by_component.get(component_id, []),
+                    key,
+                    solids[key],
+                    cells_by_instance[key],
                     geometry,
                     n_points=points,
                     rng=rng,
@@ -339,7 +363,7 @@ def compare(
         for r in results
         if r.error or r.touches_sampling_box or not r.discrepancy_pct <= threshold
     ]
-    table = Table(title=f"Components with problems (discrepancy > {threshold:g}%)")
+    table = Table(title=f"Instances with problems (discrepancy > {threshold:g}%)")
     for column in ("ID", "Cells", "CAD cm3", "MCNP cm3", "Discrepancy %", "Note"):
         table.add_column(column)
     for r in sorted(problems, key=lambda r: -np.nan_to_num(r.discrepancy_pct, nan=1e9)):
@@ -347,7 +371,7 @@ def compare(
             "cells exceed the sampled box" if r.touches_sampling_box else ""
         )
         table.add_row(
-            str(r.component_id),
+            str(r.key),
             _cells_text(r.cells),
             f"{r.cad_volume_cm3:.6g}",
             f"{r.mcnp_volume_cm3:.6g} ± {r.mcnp_volume_std_cm3:.2g}",
@@ -357,13 +381,13 @@ def compare(
     if problems:
         console.print(table)
     good = len(results) - len(problems)
-    console.print(f"[green]{good} components agree[/], {len(problems)} with problems.")
+    console.print(f"[green]{good} instances agree[/], {len(problems)} with problems.")
 
     if registry:
         reg = Registry.load(registry)
         for r in results:
-            if r.component_id in reg and not r.error:
-                reg[r.component_id].mcnp_volume_cm3 = r.mcnp_volume_cm3
+            if r.key in reg and not r.error:
+                reg[r.key].mcnp_volume_cm3 = r.mcnp_volume_cm3
         reg.save(registry)
         console.print(f"MCNP volumes saved in {esc(str(registry))} (used for the DCF).")
     if report:
@@ -372,6 +396,7 @@ def compare(
             writer.writerow(
                 [
                     "component_id",
+                    "instance",
                     "cells",
                     "cad_volume_cm3",
                     "mcnp_volume_cm3",
@@ -386,7 +411,8 @@ def compare(
             for r in results:
                 writer.writerow(
                     [
-                        r.component_id,
+                        r.key.id,
+                        r.key.instance,
                         " ".join(map(str, r.cells)),
                         r.cad_volume_cm3,
                         r.mcnp_volume_cm3,
@@ -451,13 +477,19 @@ def slice_(
     from radmodeling.mcnp.geometry import Geometry
     from radmodeling.mcnp.materials import MaterialLibrary
     from radmodeling.plot import material_slots, render_slice
-    from radmodeling.workflow import group_by_component
+    from radmodeling.workflow import exported_solids
 
     geometry = Geometry.from_file(mcnp)
-    states = {}
-    if step:
-        states, _ = group_by_component(read_step(step))
-    solids = [s for state in states.values() for s in state.solids]
+    cmap = CellMap.load(cell_map) if step and cell_map else None
+    by_instance = {}
+    if step and cmap:
+        try:
+            by_instance = exported_solids(step, cmap)
+        except ValueError as exc:
+            _fail(str(exc))
+    solids = [s for group in by_instance.values() for s in group]
+    if step and not cmap:
+        solids = [s for part in read_step(step) for s in part.solids]
 
     centre, extent = None, None
     if solids:
@@ -502,16 +534,19 @@ def slice_(
                 ):
                     local = line / MM_PER_CM - plane.origin
                     outlines.append(np.column_stack([local @ plane.u, local @ plane.v]))
-        if cell_map:
+        if cmap:
             with console.status("Comparing CAD and MCNP..."):
+                # Pixels are labelled 1, 2, 3... by instance
+                label = {key: n for n, key in enumerate(sorted(by_instance), 1)}
                 result.cad_component = classify_cad_on_plane(
-                    {i: s.solids for i, s in states.items()}, plane, n_u, n_v
+                    {label[k]: group for k, group in by_instance.items()},
+                    plane,
+                    n_u,
+                    n_v,
                 )
                 owner = {}
-                for cid, cells in (
-                    CellMap.load(cell_map).cells_by_component(first_cell).items()
-                ):
-                    owner.update(dict.fromkeys(cells, cid))
+                for key, cells in cmap.cells_by_instance(first_cell).items():
+                    owner.update(dict.fromkeys(cells, label[key]))
                 result.mcnp_component = np.vectorize(lambda c: owner.get(int(c), 0))(
                     result.cells
                 )

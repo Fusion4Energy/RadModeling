@@ -9,6 +9,7 @@ from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
 from OCP.gp import gp_Pnt
 
 from radmodeling import workflow
+from radmodeling.cad.occ import GeometryMap, bounding_box, volume_and_centroid
 from radmodeling.cad.step import Part, read_step, write_step
 from radmodeling.cellmap import CellMap
 from radmodeling.compare import compare_component
@@ -18,7 +19,7 @@ from radmodeling.mcnp.materials import (
     MaterialLibrary,
     assign_materials,
 )
-from radmodeling.registry import Component, Registry, find_id, tag_name
+from radmodeling.registry import Component, Key, Registry, find_id, tag_name
 
 
 def test_tags():
@@ -36,14 +37,36 @@ def test_registry_reads_excel_european_csv(tmp_path):
         "2;Bomba;Tungsten;;193;10\n".encode("cp1252")
     )
     registry = Registry.load(path)
-    assert registry[1].name == "Válvula"
-    assert registry[1].density == pytest.approx(7.93)
-    assert registry[2].density == pytest.approx(19.3)
+    assert registry[1, 1].name == "Válvula"
+    assert registry[1, 1].density == pytest.approx(7.93)
+    assert registry[2, 1].density == pytest.approx(19.3)
 
     registry.save(path)
     again = Registry.load(path)
-    assert again[1].name == "Válvula"
-    assert again[1].original_volume_cm3 == pytest.approx(10.5)
+    assert again[1, 1].name == "Válvula"
+    assert again[1, 1].original_volume_cm3 == pytest.approx(10.5)
+
+
+def test_registry_hierarchy_columns(tmp_path):
+    path = tmp_path / "registry.csv"
+    Registry(
+        [
+            Component(1, "Plate", levels=("Machine",)),
+            Component(2, "Bolt", 2, ("Machine", "Left"), x_cm=1.5, y_cm=0, z_cm=-2),
+        ]
+    ).save(path)
+    header = path.read_text(encoding="utf-8-sig").splitlines()[0].split(",")
+    assert header[:5] == ["id", "instance", "level_1", "level_2", "name"]
+    assert header[-3:] == ["x_cm", "y_cm", "z_cm"]
+
+    registry = Registry.load(path)
+    assert registry[1, 1].levels == ("Machine",)
+    assert registry[2, 2].levels == ("Machine", "Left")
+    assert registry[2, 2].centre_cm == (1.5, 0, -2)
+    assert registry.ids == [1, 2]
+    assert Key.parse("2.10") == (2, 10)
+    assert Key.parse("7") == (7, 1)
+    assert str(Key(2, 10)) == "2.10"
 
 
 def simplify(tagged, output):
@@ -64,27 +87,28 @@ def test_init_check_export(tmp_path, cad_model):
     registry_csv = tmp_path / "registry.csv"
     registry = workflow.init(cad_model, tagged, registry_csv)
     assert [c.name for c in registry] == ["Block", "Pipe", "Ball", "Bolts"]
-    assert registry[4].original_solids == 2
-    assert registry[2].path == "Machine / Piping"
-    assert registry[3].original_volume_cm3 == pytest.approx(4 / 3 * math.pi * 2.5**3)
+    assert registry[4, 1].original_solids == 2
+    assert registry[2, 1].levels == ("Machine", "Piping")
+    assert registry[3, 1].original_volume_cm3 == pytest.approx(4 / 3 * math.pi * 2.5**3)
+    assert registry[3, 1].centre_cm == pytest.approx((5, 5, 10))
 
     simplified = tmp_path / "simplified.step"
     simplify(tagged, simplified)
     result = workflow.check(simplified, Registry.load(registry_csv), tolerance_pct=1)
-    assert [c.id for c in result.exceeding()] == [3]
-    assert result.registry[3].volume_diff_pct == pytest.approx(
+    assert [c.key for c in result.exceeding()] == [(3, 1)]
+    assert result.registry[3, 1].volume_diff_pct == pytest.approx(
         (24**3 / 25**3 - 1) * 100, rel=1e-4
     )
-    assert [p.name for p in result.untagged] == ["Shield"]
-    assert result.missing_ids == []
+    assert [i.name for i in result.matching.untagged] == ["Shield"]
+    assert result.matching.missing == []
 
     registry = Registry.load(registry_csv)
     output = tmp_path / "export.step"
     cell_map, added = workflow.export(simplified, registry, output, tmp_path / "c.csv")
-    assert added == [5]
-    assert registry[5].status == "new"
-    assert cell_map.component_ids == [1, 2, 3, 4, 4, 5]
-    assert CellMap.load(tmp_path / "c.csv").component_ids == cell_map.component_ids
+    assert added == [(5, 1)]
+    assert registry[5, 1].status == "new"
+    assert [k.id for k in cell_map.keys] == [1, 2, 3, 4, 4, 5]
+    assert CellMap.load(tmp_path / "c.csv").keys == cell_map.keys
     # The exported file is flat and in cell order
     assert [p.name for p in read_step(output)] == [
         "Block [rm:1]",
@@ -96,10 +120,129 @@ def test_init_check_export(tmp_path, cad_model):
     ]
 
 
+def simplify_bolts(tagged, output):
+    """Mimic a CAD session on the instanced model.
+
+    The linked bolt is simplified once for all its instances, the bolt at x = 50 on
+    the left side is deleted and one bolt is copied to x = 500. The parts are written
+    in reverse order: matching must not depend on it.
+    """
+    parts, thinner = [], None
+    for part in read_step(tagged):
+        if "Bolt" in part.name:
+            if part.path[-1] == "Left" and bounding_box(part.shape)[0] == pytest.approx(
+                45
+            ):
+                continue
+            if thinner is None:
+                thinner = models.cylinder(0, 0, 0, 4.9, 20)
+            part = Part(part.name, part.path, thinner.Moved(part.shape.Location()))
+        parts.append(part)
+    copy = parts[-1]
+    parts.append(Part(copy.name, copy.path, models.placed(copy.shape, 400, 0)))
+    write_step(parts[::-1], output)
+
+
+def test_instances_are_simplified_once_and_tracked_one_by_one(tmp_path):
+    original = models.write_instanced_cad(tmp_path / "bolts.step")
+    tagged, registry_csv = tmp_path / "tagged.step", tmp_path / "registry.csv"
+    registry = workflow.init(original, tagged, registry_csv)
+    assert [str(c.key) for c in registry] == [
+        "1.1", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6"
+    ]  # fmt: skip
+    assert registry[2, 1].levels == ("Machine", "Left")
+    assert registry[2, 4].levels == ("Machine", "Right")
+    assert registry[2, 2].centre_cm == pytest.approx((5, 0, 1))
+    assert registry[2, 6].centre_cm == pytest.approx((8, 20, 1))
+    # The tagged bolts are still instances of one product
+    bolts = [p for p in read_step(tagged) if "Bolt" in p.name]
+    assert {p.name for p in bolts} == {"Bolt [rm:2]"}
+    definition: GeometryMap[bool] = GeometryMap()
+    definition[bolts[0].shape] = True
+    assert all(p.shape in definition for p in bolts)
+
+    for component in registry.instances(2):
+        component.material = "SS316L"
+    registry.save(registry_csv)
+    simplified = tmp_path / "simplified.step"
+    simplify_bolts(tagged, simplified)
+
+    result = workflow.check(simplified, Registry.load(registry_csv))
+    matching = result.matching
+    assert matching.missing == [(2, 2)]
+    assert [i.centre_cm for i in matching.extra] == [pytest.approx((48, 20, 1))]
+    assert matching.moved == []
+    assert [str(c.key) for c in result.exceeding()] == [
+        "2.1", "2.3", "2.4", "2.5", "2.6"
+    ]  # fmt: skip
+    assert result.registry[2, 2].status == "deleted"
+    assert result.registry[2, 6].volume_diff_pct == pytest.approx(
+        (0.98**2 - 1) * 100, rel=1e-4
+    )
+
+    registry = Registry.load(registry_csv)
+    output = tmp_path / "export.step"
+    cell_map, added = workflow.export(simplified, registry, output, tmp_path / "c.csv")
+    assert added == [(2, 7)]
+    assert registry[2, 7].status == "new"
+    assert registry[2, 7].material == "SS316L"
+    assert [str(k) for k in cell_map.keys] == [
+        "1.1", "2.1", "2.3", "2.4", "2.5", "2.6", "2.7"
+    ]  # fmt: skip
+    # Each exported solid is the instance its registry row describes
+    for key, solids in workflow.exported_solids(output, cell_map).items():
+        centre = np.array(volume_and_centroid(solids[0])[1]) / 10
+        assert centre == pytest.approx(registry[key].centre_cm, abs=1e-6)
+
+
+def test_tagged_assemblies_are_instances(tmp_path):
+    """Every occurrence of a tagged assembly is one instance with all its bodies."""
+    path = models.write_instanced_assembly(tmp_path / "screws.step")
+    instances = workflow.find_instances(read_step(path), workflow.Measurer())
+    assert [(i.id, i.name, len(i.parts)) for i in instances] == [(3, "Screw", 2)] * 3
+    assert [i.centre_cm[0] for i in instances if i.centre_cm] == pytest.approx(
+        [0, 10, 20], abs=1e-6
+    )
+    registry = Registry(
+        Component(3, "Screw", n, x_cm=x, y_cm=0, z_cm=1.2)
+        for n, x in ((1, 20), (2, 0), (3, 10))
+    )
+    matching = workflow.match_instances(instances, registry)
+    assert {k: i.centre_cm[0] for k, i in matching.found.items() if i.centre_cm} == (
+        pytest.approx({(3, 1): 20, (3, 2): 0, (3, 3): 10}, abs=1e-6)
+    )
+
+
+def test_far_instances_are_not_matched_unless_unambiguous():
+    def instance(component_id, x):
+        return workflow.Instance(component_id, "Part", (), [], 1.0, (x, 0.0, 0.0))
+
+    registry = Registry(
+        [
+            Component(1, "Alone", original_volume_cm3=1, x_cm=0, y_cm=0, z_cm=0),
+            *(
+                Component(2, "Bolt", n, original_volume_cm3=1, x_cm=x, y_cm=0, z_cm=0)
+                for n, x in ((1, 0), (2, 10))
+            ),
+        ]
+    )
+    # Component 1 moved; for component 2, instance 2 was deleted and one copied
+    found = [instance(1, 50), instance(2, 0.1), instance(2, 30)]
+    matching = workflow.match_instances(found, registry)
+    assert sorted(matching.found) == [(1, 1), (2, 1)]
+    assert matching.moved == [(1, 1)]
+    assert matching.missing == [(2, 2)]
+    assert [i.centre_cm for i in matching.extra] == [(30, 0, 0)]
+
+
 def cell(model: migjorn.Model, number: int) -> migjorn.Cell:
     result = model.cell(number)
     assert result is not None
     return result
+
+
+def cell_map(ids: list[int]) -> CellMap:
+    return CellMap([Key(i) for i in ids])
 
 
 def make_registry():
@@ -126,7 +269,7 @@ def test_assign_materials(library_file):
     report = assign_materials(
         model,
         make_registry(),
-        CellMap([1, 2, 3, 4, 4]),
+        cell_map([1, 2, 3, 4, 4]),
         MaterialLibrary.load(library_file),
     )
     assert cell(model, 1).material == 10
@@ -137,14 +280,14 @@ def test_assign_materials(library_file):
     assert cell(model, 4).material == 0
     assert report.material_numbers == {"SS316L": 10, "Tungsten": 31}
     assert report.cards_added == [10, 31]
-    assert "$ rm:2 Pipe DCF=1.0472" in cell(model, 2).text
+    assert "$ rm:2.1 Pipe DCF=1.0472" in cell(model, 2).text
     assert model.material(31) is not None
 
     # Running it again does not duplicate the comments
     assign_materials(
         model,
         make_registry(),
-        CellMap([1, 2, 3, 4, 4]),
+        cell_map([1, 2, 3, 4, 4]),
         MaterialLibrary.load(library_file),
     )
     assert cell(model, 2).text.count("rm:2") == 1
@@ -152,17 +295,17 @@ def test_assign_materials(library_file):
 
 def test_assign_materials_reports_all_problems(library_file):
     registry = make_registry()
-    registry[1].material = ""
-    registry[2].material = "Unobtainium"
+    registry[1, 1].material = ""
+    registry[2, 1].material = "Unobtainium"
     with pytest.raises(AssignmentError) as error:
         assign_materials(
             migjorn.parse(models.mcnp_text()),
             registry,
-            CellMap([1, 2, 3, 4, 4, 4, 4, 4, 4, 4]),  # more solids than cells
+            cell_map([1, 2, 3, 4, 4, 4, 4, 4, 4, 4]),  # more solids than cells
             MaterialLibrary.load(library_file),
         )
     message = str(error.value)
-    assert "Component 1 (Block): no material" in message
+    assert "Component 1.1 (Block): no material" in message
     assert "Unobtainium" in message
     assert "not found in the MCNP input" in message
 
@@ -171,7 +314,7 @@ def test_assign_materials_reports_all_problems(library_file):
 def test_compare_component(radius, matches):
     geometry = Geometry(migjorn.parse(models.mcnp_text(ball_radius=radius)))
     result = compare_component(
-        3,
+        Key(3),
         [models.ball()],
         [3],
         geometry,
@@ -189,7 +332,7 @@ def test_compare_component(radius, matches):
 def test_compare_flags_cells_beyond_the_cad():
     text = models.mcnp_text().replace("11 s 5 5 10 2.5", "11 s 5 5 10 6")
     result = compare_component(
-        3, [models.ball()], [3], Geometry(migjorn.parse(text)), n_points=20_000
+        Key(3), [models.ball()], [3], Geometry(migjorn.parse(text)), n_points=20_000
     )
     assert result.touches_sampling_box
 
@@ -217,7 +360,7 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
 
     tagged = cad_model.with_name("machine_tagged.step")
     output = run("check", tagged, "-r", registry, "--highlight", tmp_path / "h.json")
-    assert "Beyond volume tolerance: 0" in output
+    assert "Instances beyond volume tolerance: 0" in output
 
     exported = tmp_path / "export.step"
     run("export", tagged, "-r", registry, "-o", exported)
@@ -238,8 +381,8 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
         "--points",
         "20000",
     )
-    assert "4 components agree" in output
-    assert Registry.load(registry)[3].dcf == pytest.approx(1, abs=0.01)
+    assert "4 instances agree" in output
+    assert Registry.load(registry)[3, 1].dcf == pytest.approx(1, abs=0.01)
 
     run("materials", mcnp, "-r", registry, "-m", cells, "-l", library_file)
     result = migjorn.parse(mcnp.with_name("model_materials.mcnp").read_text())

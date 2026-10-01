@@ -17,6 +17,10 @@ keep all code in `radmodeling`.
 - Components are identified by `[rm:ID]` tags in CAD names (`registry.py`), never by
   position or name. The registry CSV is the single source of truth for materials and
   volumes; computed columns (`volume_diff_pct`, `dcf`) are derived on load and save.
+- The tag is on the part definition: instances of a part share it and stay linked
+  (`write_step` keeps instancing; only `export` flattens). Registry rows are per
+  instance, keyed `(id, instance)`; instances are matched by centre of mass
+  (`workflow.match_instances`). The cell map is positional: n-th solid = n-th cell.
 - STEP I/O is direct OCP/XCAF (`cad/step.py`), not build123d: build123d mangles names.
   Non-ASCII names are written as `\X2\` escapes. `cad/occ.py` hides OCP 7.x/8.x API
   differences (`TopoDS.Solid` vs `Solid_s`, collections module, `Bnd_Box.Get`).

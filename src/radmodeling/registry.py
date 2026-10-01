@@ -1,9 +1,15 @@
-"""The component registry: one row per component, kept as an Excel-friendly CSV.
+"""The component registry: one row per body, kept as an Excel-friendly CSV.
 
 Components are identified by an integer ID embedded in their name as ``[rm:ID]``. The
 tag survives STEP round trips through any CAD program, so simplified models can always
 be matched back to the original components, no matter how the user renames or moves
 them in the assembly tree.
+
+The tag belongs to the part definition, so all the instances of a repeated part (the
+same bolt placed 20 times) share it and stay linked in the CAD program. Each instance
+is a row of its own, keyed by ``(id, instance)`` and told apart by its centre of mass.
+The assembly hierarchy is written as ``level_1``, ``level_2``... columns so that the
+registry can be filtered by subassembly in Excel.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ import os
 import re
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, fields
+from typing import NamedTuple
 
 TAG_RE = re.compile(r"\s*\[rm:(\d+)\]")
 
@@ -39,11 +46,28 @@ def find_id(names: Iterable[str]) -> int | None:
 VOID = "void"
 
 
+class Key(NamedTuple):
+    """Identifies a registry row: the component ID and the instance number."""
+
+    id: int
+    instance: int = 1
+
+    def __str__(self) -> str:
+        return f"{self.id}.{self.instance}"
+
+    @classmethod
+    def parse(cls, text: str) -> Key:
+        """Read ``'3.7'`` (component 3, instance 7) or ``'3'`` (instance 1)."""
+        component_id, _, instance = text.strip().partition(".")
+        return cls(int(component_id), int(instance) if instance else 1)
+
+
 @dataclass
 class Component:
     id: int
     name: str
-    path: str = ""
+    instance: int = 1
+    levels: tuple[str, ...] = ()  # names of the assemblies above, from the root
     material: str = ""
     density_g_cm3: float | None = None
     mass_g: float | None = None
@@ -56,8 +80,21 @@ class Component:
     dcf: float | None = None  # computed
     status: str = ""
     comment: str = ""
+    x_cm: float | None = None  # centre of mass of the original body
+    y_cm: float | None = None
+    z_cm: float | None = None
 
     COMPUTED = ("volume_diff_pct", "dcf")
+
+    @property
+    def key(self) -> Key:
+        return Key(self.id, self.instance)
+
+    @property
+    def centre_cm(self) -> tuple[float, float, float] | None:
+        if self.x_cm is None or self.y_cm is None or self.z_cm is None:
+            return None
+        return self.x_cm, self.y_cm, self.z_cm
 
     @property
     def is_void(self) -> bool:
@@ -85,50 +122,73 @@ class Component:
             self.dcf = self.original_volume_cm3 / self.mcnp_volume_cm3
 
 
-COLUMNS = [f.name for f in fields(Component)]
+_FIELDS = [f.name for f in fields(Component) if f.name != "levels"]
+_KEY = ("id", "instance")
+_VALUES = [c for c in _FIELDS if c not in _KEY]  # after the level_N columns
 _FLOATS = {f.name for f in fields(Component) if "float" in str(f.type)}
-_INTS = {f.name for f in fields(Component) if "int" in str(f.type) and f.name != "id"}
+_INTS = {f.name for f in fields(Component) if f.type in ("int", "int | None")}
+LEVEL_RE = re.compile(r"level_(\d+)$")
+
+
+def columns(depth: int) -> list[str]:
+    """CSV columns of a registry whose deepest component is ``depth`` levels down."""
+    levels = [f"level_{i}" for i in range(1, depth + 1)]
+    return [*_KEY, *levels, *_VALUES]
 
 
 class Registry:
     def __init__(self, components: Iterable[Component] = ()):
-        self._components: dict[int, Component] = {}
+        self._components: dict[Key, Component] = {}
         for component in components:
             self.add(component)
 
     def add(self, component: Component) -> None:
-        if component.id in self._components:
-            raise ValueError(f"Duplicated component id {component.id}")
-        self._components[component.id] = component
+        if component.key in self._components:
+            raise ValueError(f"Duplicated component {component.key}")
+        self._components[component.key] = component
 
-    def __getitem__(self, component_id: int) -> Component:
-        return self._components[component_id]
+    def __getitem__(self, key: tuple[int, int]) -> Component:
+        return self._components[Key(*key)]
 
-    def __contains__(self, component_id: int) -> bool:
-        return component_id in self._components
+    def __contains__(self, key: tuple[int, int]) -> bool:
+        return Key(*key) in self._components
 
     def __iter__(self) -> Iterator[Component]:
-        return iter(sorted(self._components.values(), key=lambda c: c.id))
+        return iter(sorted(self._components.values(), key=lambda c: c.key))
 
     def __len__(self) -> int:
         return len(self._components)
 
     @property
+    def ids(self) -> list[int]:
+        return sorted({key.id for key in self._components})
+
+    def instances(self, component_id: int) -> list[Component]:
+        """The rows of a component, by instance number."""
+        return [c for c in self if c.id == component_id]
+
+    @property
     def next_id(self) -> int:
-        return max(self._components, default=0) + 1
+        return max((key.id for key in self._components), default=0) + 1
 
     # --- persistence ---------------------------------------------------------------
 
     def save(self, path: str | os.PathLike) -> None:
         for component in self:
             component.update_computed()
+        depth = max((len(c.levels) for c in self), default=0)
         # utf-8-sig makes Excel recognise the encoding
         with open(path, "w", encoding="utf-8-sig", newline="") as outfile:
             writer = csv.writer(outfile)
-            writer.writerow(COLUMNS)
+            writer.writerow(columns(depth))
             for component in self:
+                levels = [*component.levels, *[""] * (depth - len(component.levels))]
                 writer.writerow(
-                    _format(getattr(component, column)) for column in COLUMNS
+                    [
+                        *map(_format, component.key),
+                        *levels,
+                        *(_format(getattr(component, c)) for c in _VALUES),
+                    ]
                 )
 
     @classmethod
@@ -187,16 +247,27 @@ def _parse_float(text: str) -> float | None:
 
 def _parse_row(row: dict[str, str | None]) -> Component:
     values: dict[str, object] = {}
-    for column in COLUMNS:
+    for column in _FIELDS:
         raw = (row.get(column) or "").strip()
         if column in Component.COMPUTED:
             continue
         if column == "id":
             values["id"] = int(raw)
+        elif column == "instance":
+            values["instance"] = int(raw) if raw else 1
         elif column in _FLOATS:
             values[column] = _parse_float(raw)
         elif column in _INTS:
             values[column] = int(raw) if raw else None
         else:
             values[column] = raw
+    levels = sorted(
+        (int(match.group(1)), (value or "").strip())
+        for column, value in row.items()
+        if column and (match := LEVEL_RE.match(column))
+    )
+    names = [name for _, name in levels]
+    while names and not names[-1]:
+        names.pop()
+    values["levels"] = tuple(names)
     return Component(**values)  # type: ignore[arg-type]

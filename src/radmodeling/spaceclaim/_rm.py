@@ -117,7 +117,11 @@ def rm_float(text):
 
 
 def rm_read_registry(path=None):
-    """Read the registry CSV as a dict: component ID -> row (dict of strings)."""
+    """Read the registry CSV as a dict: component ID -> rows (dicts of strings).
+
+    A component has one row per instance. In SpaceClaim the linked instances share
+    their name and tag, so the tools work with all the rows of an ID at once.
+    """
     path = path or rm_find_file(
         "_registry.csv", "Select the RadModeling registry", "Registry (*.csv)|*.csv"
     )
@@ -136,10 +140,57 @@ def rm_read_registry(path=None):
     rows = {}
     for row in csv.DictReader(lines, delimiter=delimiter):
         try:
-            rows[int(row["id"])] = row
+            rows.setdefault(int(row["id"]), []).append(row)
         except (KeyError, ValueError):
             continue
     return rows
+
+
+def rm_instances(bodies):
+    """Group the bodies of a component by instance: the bodies of each part."""
+    groups = {}
+    order = []
+    for body in bodies:
+        try:
+            part = body.Parent
+        except AttributeError:
+            part = None
+        if part is None:
+            order.append([body])
+            continue
+        if part not in groups:
+            groups[part] = []
+            order.append(groups[part])
+        groups[part].append(body)
+    return order
+
+
+def rm_instance_bodies(body):
+    """The bodies of the instance the body belongs to: those of its part."""
+    try:
+        bodies = list(body.Parent.Bodies)
+        if bodies:
+            return bodies
+    except AttributeError:
+        pass
+    return [body]
+
+
+RM_SAME_VOLUME_PCT = 0.1
+
+
+def rm_instance_volume(rows):
+    """Original volume of one instance of a component, and an error message.
+
+    Instances of a component share their geometry, so all its rows have the same
+    original volume and every instance must keep it.
+    """
+    volumes = [rm_float(row.get("original_volume_cm3")) for row in rows or []]
+    if not volumes or None in volumes:
+        return None, "has no original volume in the registry"
+    if (max(volumes) - min(volumes)) / max(volumes) * 100 > RM_SAME_VOLUME_PCT:
+        return None, "has instances with different original volumes"
+    return sum(volumes) / len(volumes), None
 
 
 def rm_set_color(bodies, color, transparent=False):

@@ -1,5 +1,8 @@
 # RadModeling: extrude the selected faces until the component recovers its original
 # volume (from the registry). Select one or more faces of a single component first.
+#
+# The target is the volume of one instance: linked instances change together, and
+# instances that were deleted or made independent do not disturb the result.
 TOLERANCE_PCT = 0.5
 MAX_ITERATIONS = 25
 
@@ -15,15 +18,12 @@ def rm_adjust_volume():
     if component_id is None:
         rm_message("The selected faces do not belong to a tagged component.")
         return
-    row = rm_read_registry().get(component_id)
-    target = rm_float(row.get("original_volume_cm3")) if row else None
-    if not target:
-        rm_message(
-            "Component %d has no original volume in the registry." % component_id
-        )
+    target, problem = rm_instance_volume(rm_read_registry().get(component_id))
+    if problem:
+        rm_message("Component %d %s." % (component_id, problem))
         return
 
-    bodies = rm_bodies_by_id()[0][component_id]
+    bodies = rm_instance_bodies(body)
     options = ExtrudeFaceOptions()
     options.ExtrudeType = ExtrudeType.ForceIndependent
 
@@ -47,9 +47,10 @@ def rm_adjust_volume():
         step = -value / slope if slope else step / 2.0
         iterations += 1
 
-    rm_set_color(bodies, RM_BLUE, transparent=True)
+    rm_set_color(rm_bodies_by_id()[0][component_id], RM_BLUE, transparent=True)
     rm_message(
-        "Component %d: extruded %.3f mm, volume difference %.3f%% (%d iterations)"
+        "Component %d: extruded %.3f mm, instance volume difference %.3f%% "
+        "(%d iterations). Linked instances changed with it."
         % (component_id, distance, value / target * 100, iterations)
     )
 

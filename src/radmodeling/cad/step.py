@@ -3,8 +3,9 @@
 An assembly is handled as a flat list of :class:`Part` objects. Each part keeps the
 names of all its ancestors (``path``) and its shape with the assembly placement already
 applied, so instancing is resolved: four instances of the same bolt become four parts.
-That is exactly what a Monte Carlo transport model needs, as each instance becomes its
-own set of cells.
+That is what a Monte Carlo transport model needs, as each instance becomes its own set
+of cells. The instances still share their geometry (``TShape``), so writing them back
+keeps them linked: simplifying one bolt in a CAD program simplifies all four.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from OCP.BRep import BRep_Builder
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy, BRepBuilderAPI_Transform
 from OCP.IFSelect import IFSelect_ReturnStatus
 from OCP.Interface import Interface_Static
 from OCP.Message import Message, Message_Gravity
@@ -27,7 +29,7 @@ from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS_Compound, TopoDS_Shape, TopoDS_Solid
 from OCP.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
 
-from radmodeling.cad.occ import LabelSequence, solids
+from radmodeling.cad.occ import GeometryMap, LabelSequence, solids
 
 
 @dataclass
@@ -38,6 +40,9 @@ class Part:
     path: tuple[str, ...]
     shape: TopoDS_Shape
     instance_name: str = ""
+    # Position of each node of path + name among its siblings: tells apart the
+    # instances of an assembly, which all have the same path. Empty if not read.
+    occurrence: tuple[int, ...] = ()
     extra: dict = field(default_factory=dict)
 
     @property
@@ -83,7 +88,10 @@ def read_step(path: str | os.PathLike) -> list[Part]:
     parts: list[Part] = []
 
     def visit(
-        labels: LabelSequence, path: tuple[str, ...], location: TopLoc_Location
+        labels: LabelSequence,
+        path: tuple[str, ...],
+        location: TopLoc_Location,
+        occurrence: tuple[int, ...],
     ) -> None:
         for i in range(1, labels.Length() + 1):
             label = labels.Value(i)
@@ -102,17 +110,17 @@ def read_step(path: str | os.PathLike) -> list[Part]:
             if XCAFDoc_ShapeTool.IsAssembly_s(label):
                 children = LabelSequence()
                 XCAFDoc_ShapeTool.GetComponents_s(label, children, False)
-                visit(children, (*path, name), node_location)
+                visit(children, (*path, name), node_location, (*occurrence, i))
                 continue
 
             shape = XCAFDoc_ShapeTool.GetShape_s(label).Moved(node_location)
             if not solids(shape):
                 continue  # sketches, points, surfaces... are not relevant here
-            parts.append(Part(name, path, shape, instance_name))
+            parts.append(Part(name, path, shape, instance_name, (*occurrence, i)))
 
     free_shapes = LabelSequence()
     shape_tool.GetFreeShapes(free_shapes)
-    visit(free_shapes, (), TopLoc_Location())
+    visit(free_shapes, (), TopLoc_Location(), ())
     return parts
 
 
@@ -125,12 +133,18 @@ def compound(shapes: Sequence[TopoDS_Shape]) -> TopoDS_Compound:
     return result
 
 
-def write_step(parts: Sequence[Part], path: str | os.PathLike) -> None:
+def write_step(
+    parts: Sequence[Part], path: str | os.PathLike, instancing: bool = True
+) -> None:
     """Write the parts as a STEP assembly that mirrors their ``path`` hierarchy.
 
-    Every part is written as its own product (no instancing) with its placement baked
-    into the geometry. Parts are written in the given order, which is the order in which
-    CAD-to-MCNP converters will number the resulting cells.
+    With ``instancing``, parts in an assembly that share their geometry and name (the
+    instances of a CAD part, as :func:`read_step` returns them) become instances of a
+    single product, so that editing one in a CAD program edits all of them.
+
+    Without it, every part is written as its own product with its placement baked into
+    the geometry, as CAD-to-MCNP converters expect. Parts are written in the given
+    order, which is the order in which converters number the resulting cells.
     """
     _quiet_occt()
     doc = TDocStd_Document(TCollection_ExtendedString("XmlOcaf"))
@@ -156,17 +170,45 @@ def write_step(parts: Sequence[Part], path: str | os.PathLike) -> None:
             assemblies[path] = label
         return assemblies[path]
 
+    # Products written so far by geometry and name. XCAF would otherwise merge the
+    # parts that share their geometry into a single product with a single name.
+    products: GeometryMap[dict[str, TDF_Label]] = GeometryMap()
     for part in parts:
-        label = shape_tool.AddShape(part.shape, False, False)
-        set_name(label, part.name)
         parent = assembly_label(part.path)
+        written = products.get(part.shape)
+        seen = written is not None  # the geometry is already in another product
+        if written is None:
+            written = {}
+            products[part.shape] = written
+        if not instancing or parent is None:
+            shape = part.shape
+            if seen or not shape.Location().IsIdentity():
+                shape = BRepBuilderAPI_Transform(
+                    shape.Located(identity), shape.Location().Transformation(), True
+                ).Shape()
+            label = shape_tool.AddShape(shape, False, False)
+            set_name(label, part.name)
+            location = identity
+        else:
+            label = written.get(part.name)
+            if label is None:
+                shape = part.shape.Located(identity)
+                if seen:  # under another name, or baked: it needs its own product
+                    shape = BRepBuilderAPI_Copy(shape).Shape()
+                written[part.name] = label = shape_tool.AddShape(shape, False, False)
+                set_name(label, part.name)
+            location = part.shape.Location()
         if parent is not None:
-            instance = shape_tool.AddComponent(parent, label, identity)
+            instance = shape_tool.AddComponent(parent, label, location)
             set_name(instance, part.name)
 
     # Assemblies only become proper shapes once all their components are added
     shape_tool.UpdateAssemblies()
+    write_document(doc, path)
 
+
+def write_document(doc: TDocStd_Document, path: str | os.PathLike) -> None:
+    """Write an XCAF document as STEP, with its names and in millimetres."""
     writer = STEPCAFControl_Writer()
     writer.SetNameMode(True)
     writer.SetColorMode(False)

@@ -27,16 +27,25 @@ other than ``V241``.
 The tools look for the ``*_registry.csv`` file next to the SpaceClaim document and ask
 for it if there is none or more than one.
 
+The instances of a component share their geometry, so they all have the same original
+volume. *Check volumes* and *Adjust volume* compare each instance with it: deleting
+some instances (a few bolts, say) does not affect the others, and an instance made
+independent is checked on its own. The bodies of an instance are those of its part.
+
+Linked instances share their name in SpaceClaim, so *Show by material* cannot tell
+them apart: a component is shown if any of its instances is made of a chosen
+material.
+
 Tools
 -----
 
 **Check volumes**
-   Colours in red the components whose volume differs from the original by more
+   Colours in red the instances whose volume differs from the original by more
    than 1 %, blue transparent the rest, and grey the untagged bodies.
 
 **Adjust volume**
    Select one or more faces of a component and run it: the faces are extruded until
-   the component recovers its original volume (within 0.5 %).
+   the selected instance recovers its original volume (within 0.5 %).
 
 **Show by material**
    Choose materials from a list to show only their components. ``(no material)``

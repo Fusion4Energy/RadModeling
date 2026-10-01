@@ -1,5 +1,7 @@
 # RadModeling: show only the components made of the chosen materials (from the
-# registry). "(no material)" lists the components still waiting for one.
+# registry). "(no material)" lists the components still waiting for one. Linked
+# instances cannot be told apart here: a component is shown if any of its instances
+# is made of a chosen material.
 import clr
 
 clr.AddReference("System.Windows.Forms")
@@ -51,19 +53,21 @@ def rm_show_by_material():
     registry = rm_read_registry()
     by_id, _ = rm_bodies_by_id()
 
-    def material_of(component_id):
-        row = registry.get(component_id)
-        material = (row.get("material") or "").strip() if row else ""
-        return material or NO_MATERIAL
+    def materials_of(component_id):
+        rows = registry.get(component_id) or [{}]
+        return set((row.get("material") or "").strip() or NO_MATERIAL for row in rows)
 
-    materials = sorted(set(material_of(i) for i in by_id), key=lambda m: m.lower())
+    materials = set()
+    for component_id in by_id:
+        materials |= materials_of(component_id)
+    materials = sorted(materials, key=lambda m: m.lower())
     form = RmMaterialsForm(materials)
     if form.ShowDialog() != DialogResult.OK:
         return
     chosen = set(form.selected())
     bodies = []
     for component_id, component_bodies in by_id.items():
-        if material_of(component_id) in chosen:
+        if materials_of(component_id) & chosen:
             bodies.extend(component_bodies)
     rm_show_only(bodies)
     ViewHelper.ZoomToEntity()

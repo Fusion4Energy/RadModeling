@@ -7,7 +7,7 @@ from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeTorus
 
 from radmodeling.cad.analysis import analyse
 from radmodeling.cad.mesh import LineFrame, inside_on_lines, triangulate
-from radmodeling.cad.occ import bounding_box, volume_mm3
+from radmodeling.cad.occ import GeometryMap, bounding_box, volume_mm3
 from radmodeling.cad.section import section_polylines
 from radmodeling.cad.step import Part, read_step, write_step
 
@@ -32,6 +32,38 @@ def test_step_round_trip_keeps_names_hierarchy_and_order(tmp_path):
     volumes = {p.name: volume_mm3(p.shape) for p in read}
     assert volumes["Pipe"] == pytest.approx(math.pi * (30**2 - 20**2) * 100)
     assert len(next(p for p in read if p.name == "Bolts").solids) == 2
+
+
+def test_instances_stay_linked_and_keep_their_names(tmp_path):
+    box = BRepPrimAPI_MakeBox(10, 10, 10).Shape()
+    parts = [
+        Part("Bolt [rm:1]", ("Asm",), models.placed(box, 20 * i, 0)) for i in range(3)
+    ]
+    # Same geometry under another name: it needs its own product to keep its name
+    parts.append(Part("Spacer [rm:2]", ("Asm",), models.placed(box, 0, 50)))
+    names = [p.name for p in parts]
+    corners = [bounding_box(p.shape)[:2] for p in parts]
+
+    linked = tmp_path / "linked.step"
+    write_step(parts, linked)
+    read = read_step(linked)
+    assert [p.name for p in read] == names
+    assert [bounding_box(p.shape)[:2] for p in read] == pytest.approx(corners, abs=1e-3)
+    bolt: GeometryMap[bool] = GeometryMap()
+    bolt[read[0].shape] = True
+    assert [p.shape in bolt for p in read] == [True, True, True, False]
+
+    flat = tmp_path / "flat.step"
+    write_step(read, flat, instancing=False)
+    again = read_step(flat)
+    assert [p.name for p in again] == names
+    assert [bounding_box(p.shape)[:2] for p in again] == pytest.approx(
+        corners, abs=1e-3
+    )
+    # Placement baked into the geometry
+    moves = [p.shape.Location().Transformation().TranslationPart() for p in again]
+    assert [m.Modulus() for m in moves] == pytest.approx([0, 0, 0, 0], abs=1e-9)
+    assert sum(p.shape in bolt for p in again) == 0
 
 
 def test_analysis_reports_tori():

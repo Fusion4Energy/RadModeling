@@ -22,13 +22,14 @@ from OCP.TopoDS import TopoDS_Shape
 from radmodeling.cad.mesh import LineFrame, TriMesh, inside_on_lines, triangulate
 from radmodeling.cad.occ import bounding_box
 from radmodeling.mcnp.geometry import Geometry
+from radmodeling.registry import Key
 
 MM_PER_CM = 10.0
 
 
 @dataclass
 class VolumeComparison:
-    component_id: int
+    key: Key
     cells: list[int]
     cad_volume_cm3: float  # of the tessellated CAD, consistent with the sampling
     mcnp_volume_cm3: float
@@ -47,7 +48,7 @@ class VolumeComparison:
 
 
 def compare_component(
-    component_id: int,
+    key: Key,
     solids: Sequence[TopoDS_Shape],
     cells: list[int],
     geometry: Geometry,
@@ -86,7 +87,7 @@ def compare_component(
     except ValueError as exc:
         nan = float("nan")
         return VolumeComparison(
-            component_id=component_id,
+            key=key,
             cells=cells,
             cad_volume_cm3=cad_volume,
             mcnp_volume_cm3=nan,
@@ -111,7 +112,7 @@ def compare_component(
     on_faces = np.any((points < lo + near) | (points > hi - near), axis=-1)
 
     return VolumeComparison(
-        component_id=component_id,
+        key=key,
         cells=cells,
         cad_volume_cm3=cad_volume,
         mcnp_volume_cm3=float(mcnp_volume),

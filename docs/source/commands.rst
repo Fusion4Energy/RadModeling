@@ -17,9 +17,9 @@ Workflow
    STEP file for the CAD-to-MCNP converter and its cell map.
 
 ``radmod compare OUT.step MODEL.mcnp -m CELLS.csv``
-   CAD vs MCNP volumes and discrepancies per component. ``--components 3,7`` limits it
-   to some components, ``--points`` sets the samples per component (100 000 by
-   default).
+   CAD vs MCNP volumes and discrepancies per instance. ``--components 3,7.2`` limits
+   it to some components (all instances of 3, instance 2 of 7), ``--points`` sets the
+   samples per instance (100 000 by default).
 
 ``radmod materials MODEL.mcnp -r REGISTRY -m CELLS.csv -l LIBRARY.toml``
    Materials, densities, density correction factors and comments in the cells.

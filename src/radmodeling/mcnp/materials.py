@@ -24,7 +24,7 @@ from dataclasses import dataclass, field
 import migjorn
 
 from radmodeling.cellmap import CellMap
-from radmodeling.registry import Component, Registry
+from radmodeling.registry import Component, Key, Registry
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -85,7 +85,7 @@ class AssignmentReport:
     cards_added: list[int] = field(default_factory=list)
     cards_already_defined: list[int] = field(default_factory=list)
     without_composition: list[str] = field(default_factory=list)
-    dcf_out_of_range: list[tuple[int, float]] = field(default_factory=list)
+    dcf_out_of_range: list[tuple[Key, float]] = field(default_factory=list)
     void_components: int = 0
 
 
@@ -104,13 +104,15 @@ def assign_materials(
 ) -> AssignmentReport:
     """Write materials, densities and component comments into the cells of a model.
 
+    Each instance of a component gets the material and density of its own row.
+
     Every problem found (missing cells, materials or densities) is collected and
     raised together in a single :class:`AssignmentError`, so that the registry can be
     fixed in one pass.
     """
     report = AssignmentReport()
     errors: list[str] = []
-    cells_by_component = cell_map.cells_by_component(first_cell)
+    cells_by_instance = cell_map.cells_by_instance(first_cell)
 
     # Material numbers: explicit ones first, then auto-assign the rest
     used_numbers = {m.number for m in library.materials if m.number is not None}
@@ -125,21 +127,21 @@ def assign_materials(
         return material.number
 
     used: dict[str, Material] = {}
-    for component_id, cells in sorted(cells_by_component.items()):
-        if component_id not in registry:
-            errors.append(f"Component {component_id} is not in the registry")
+    for key, cells in sorted(cells_by_instance.items()):
+        if key not in registry:
+            errors.append(f"Component {key} is not in the registry")
             continue
-        component = registry[component_id]
+        component = registry[key]
         missing_cells = [n for n in cells if model.cell(n) is None]
         if missing_cells:
             errors.append(
-                f"Component {component_id}: cells {missing_cells} not found in the "
+                f"Component {key}: cells {missing_cells} not found in the "
                 "MCNP input (is the first cell number right?)"
             )
             continue
 
         if not component.material.strip():
-            errors.append(f"Component {component_id} ({component.name}): no material")
+            errors.append(f"Component {key} ({component.name}): no material")
             continue
         if component.is_void:
             report.void_components += 1
@@ -153,20 +155,20 @@ def assign_materials(
         material = library.get(component.material)
         if material is None:
             errors.append(
-                f"Component {component_id}: material {component.material!r} is not in "
+                f"Component {key}: material {component.material!r} is not in "
                 "the material library"
             )
             continue
         density = component.density or material.density
         if density is None:
-            errors.append(f"Component {component_id} ({component.name}): no density")
+            errors.append(f"Component {key} ({component.name}): no density")
             continue
 
         dcf = 1.0
         if use_dcf and component.mcnp_volume_cm3 and component.original_volume_cm3:
             dcf = component.original_volume_cm3 / component.mcnp_volume_cm3
             if not dcf_range[0] <= dcf <= dcf_range[1]:
-                report.dcf_out_of_range.append((component_id, dcf))
+                report.dcf_out_of_range.append((key, dcf))
 
         number = material_number(material)
         used[material.name] = material
@@ -205,12 +207,12 @@ def assign_materials(
 def _add_comment(cell: migjorn.Cell, component: Component, dcf: float | None) -> None:
     if f"$ {COMMENT_TAG}" in cell.text:
         return  # already processed
-    comment = f"{COMMENT_TAG}{component.id} {component.name}"
+    comment = f"{COMMENT_TAG}{component.key} {component.name}"
     if dcf is not None and abs(dcf - 1.0) > 1e-4:
         comment += f" DCF={dcf:.4f}"
     last_line = cell.text.rstrip("\r\n").split("\n")[-1]
     room = MAX_LINE - len(last_line) - 3
-    if room < len(COMMENT_TAG) + len(str(component.id)):
+    if room < len(COMMENT_TAG) + len(str(component.key)):
         return
     cell.append_comment(f"$ {comment[:room]}")
 
