@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import os
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TypeAlias
 
@@ -29,45 +29,6 @@ Points: TypeAlias = np.ndarray  # (N, 3) in cm
 
 class McnpParseError(ValueError):
     pass
-
-
-def expand_numbers(tokens: Sequence[str]) -> list[float]:
-    """Parse a list of numbers expanding the nR, nI and xM shortcuts."""
-    values: list[float] = []
-    for token in tokens:
-        lower = token.lower()
-        match = re.fullmatch(r"(\d*)([rim])", lower) or re.fullmatch(
-            r"([-+.\deE]+)(m)", lower
-        )
-        if match and values:
-            count_text, kind = match.groups()
-            if kind == "r":
-                values.extend([values[-1]] * int(count_text or 1))
-                continue
-            if kind == "m":
-                values.append(values[-1] * float(count_text))
-                continue
-            values.extend([float("nan")] * int(count_text or 1))  # interpolated below
-            continue
-        try:
-            values.append(float(token))
-        except ValueError as exc:
-            raise McnpParseError(f"Invalid number {token!r}") from exc
-    # resolve interpolations
-    i = 0
-    while i < len(values):
-        if values[i] != values[i]:  # NaN
-            j = i
-            while j < len(values) and values[j] != values[j]:
-                j += 1
-            if i == 0 or j == len(values):
-                raise McnpParseError("Interpolation without bounds")
-            start, end, n = values[i - 1], values[j], j - i + 1
-            for k in range(i, j):
-                values[k] = start + (end - start) * (k - i + 1) / n
-            i = j
-        i += 1
-    return values
 
 
 # --- transformations -------------------------------------------------------------
@@ -640,28 +601,6 @@ def _cell_from_card(card: migjorn.Cell) -> Cell:
     return cell
 
 
-_SHORTCUT = re.compile(r"^\d*[rim]$|^[-+.\deE]+m$", re.IGNORECASE)
-
-
-def _coefficients(card: migjorn.Surface) -> list[float]:
-    """Surface coefficients, expanding nR/nI/xM shortcuts that migjorn drops."""
-    text = "\n".join(
-        line.split("$", 1)[0].rstrip().rstrip("&")
-        for line in card.text.splitlines()
-        if not re.match(r"^ {0,4}[cC](\s|$)", line)
-    )
-    tokens = text.split()
-    kind_index = next(
-        (i for i, t in enumerate(tokens) if t.lower() == (card.kind or "").lower()),
-        None,
-    )
-    if kind_index is None or not any(
-        _SHORTCUT.match(t) for t in tokens[kind_index + 1 :]
-    ):
-        return list(card.coeffs)
-    return expand_numbers(tokens[kind_index + 1 :])
-
-
 def _surfaces_from_card(card: migjorn.Surface) -> list[Surface]:
     """Surfaces of a card. Macrobodies give one surface per facet plus the body."""
     name = str(card.id)
@@ -669,7 +608,7 @@ def _surfaces_from_card(card: migjorn.Surface) -> list[Surface]:
     transform = card.transform
     if transform is not None and transform < 0:
         return [Surface(name, kind, None, None, "periodic surfaces are not supported")]
-    values = _coefficients(card)
+    values = list(card.coeffs)
 
     if kind in MACROBODIES:
         try:

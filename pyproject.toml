@@ -33,19 +33,11 @@ testpaths = ["tests"]
 
 [tool.pyright]
 # SpaceClaim scripts run in IronPython with names injected by SpaceClaim
-exclude = [
-    "src/radmodeling/spaceclaim",
-    "src/csv_based_workflow",
-    "src/cad_to_mcnp_comparison",
-    "src/miscellaneous",
-    "src/legacy",
-    ".venv",
-]
+exclude = ["src/radmodeling/spaceclaim", ".venv"]
 
 [tool.ruff]
 line-length = 88
 target-version = "py310"
-extend-exclude = ["src/csv_based_workflow", "src/cad_to_mcnp_comparison", "src/miscellaneous", "src/legacy"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]

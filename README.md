@@ -67,12 +67,6 @@ SpaceClaim tools: `radmod spaceclaim-loaders <folder>` and publish the loaders o
 
 Full documentation: https://radmodeling.readthedocs.io
 
-## Version 1 scripts
-
-The original IronPython scripts are still in `src/csv_based_workflow`,
-`src/cad_to_mcnp_comparison`, `src/miscellaneous` and `src/legacy`, and documented
-under "Version 1" in the documentation. They are superseded by `radmod`.
-
 ## License
 
 Copyright 2019 F4E | European Joint Undertaking for ITER and the Development of Fusion

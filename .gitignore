@@ -3,5 +3,5 @@ __pycache__/
 *.mcnp*
 *.db
 *.csv
-!materials_id.csv
-.*/!.github/
+.*/
+!.github/

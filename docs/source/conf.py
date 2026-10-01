@@ -29,8 +29,3 @@ html_sidebars = {"**": []}
 html_theme_options = {
     "secondary_sidebar_items": ["page-toc"],
 }
-
-
-# Include custom CSS file
-def setup(app):
-    app.add_css_file("custom.css")

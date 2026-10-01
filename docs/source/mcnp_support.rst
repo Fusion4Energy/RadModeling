@@ -13,7 +13,6 @@ Supported
 * Macrobodies RPP, BOX, SPH, RCC and TRC, as bodies and through their facets.
 * TR and \*TR transformations on surfaces (3, 12 or 13 entries).
 * Intersections, unions, complements ``#n`` and ``#( )``, and LIKE n BUT cells.
-* The repeat, insert and multiply shortcuts (``2r``, ``3i``, ``2m``) in surface cards.
 
 Not supported
 -------------
@@ -22,6 +21,7 @@ Not supported
   cells count as their envelope.
 * TRCL on cells, periodic surfaces, and the macrobodies RHP/HEX, REC, ELL, WED and
   ARB.
+* The repeat, insert and multiply shortcuts (``2r``, ``3i``, ``2m``) in surface cards.
 
 Unsupported features only matter for the cells that use them: they raise an error
 when such a cell is evaluated, and the rest of the model works normally.

@@ -50,13 +50,3 @@ The source code is hosted on `GitHub <https://github.com/Fusion4Energy/RadModeli
    spaceclaim
    mcnp_support
    development
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Version 1 (SpaceClaim scripts)
-
-   usage
-   csv_workflow
-   cad_to_mcnp_comparison
-   miscellaneous
-   legacy

@@ -9,7 +9,6 @@ from radmodeling.mcnp.geometry import (
     Geometry,
     McnpParseError,
     Transform,
-    expand_numbers,
     macrobody_facets,
     parse_geometry,
     surface_function,
@@ -62,12 +61,6 @@ def test_rpp_facets_order():
     assert values == pytest.approx([-0.5, -0.5, -1, -1, -1.5, -1.5])
 
 
-def test_expand_numbers_shortcuts():
-    assert expand_numbers(["1", "2r", "3"]) == [1, 1, 1, 3]
-    assert expand_numbers(["0", "3i", "4"]) == [0, 1, 2, 3, 4]
-    assert expand_numbers(["2", "3m"]) == [2, 6]
-
-
 def test_geometry_parser_precedence():
     node = parse_geometry("-1 2 : 3 #(4 : -5) #7")
     assert node.op == "or"
@@ -102,7 +95,7 @@ MODEL = """Geometry test
 4 pz -50
 5 so 100
 6 rcc 0 50 0 0 0 10 3
-7 gq 1 2r 0 0 0 0 0 0 -4
+7 gq 1 1 1 0 0 0 0 0 0 -4
 
 tr1 0 0 -1
 """
@@ -127,7 +120,6 @@ def test_model_classification():
     assert count.tolist() == [1] * 5  # no overlaps among the level-0 cells
     # Cell 3 is a copy of cell 1 and overlaps it
     assert evaluator.cell(3).tolist() == evaluator.cell(1).tolist()
-    # The nR shortcut, which migjorn drops, is expanded
     gq = geometry.surfaces["7"].evaluate(np.array([[1.0, 1, 1]]), {})
     assert gq[0] == pytest.approx(-1)
 

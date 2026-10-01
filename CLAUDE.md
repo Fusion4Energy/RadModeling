@@ -23,16 +23,12 @@ CAD preparation and CAD-to-MCNP quality assurance. Python package `radmodeling`
 - MCNP inputs are parsed and edited with `migjorn` (lossless). `mcnp/geometry.py`
   adds the point classifier: surfaces, macrobodies, TR, complements, LIKE BUT, and
   conservative bounding boxes so cells/surfaces are only evaluated where needed.
-  migjorn drops coefficients after `nR`/`nI`/`xM` shortcuts; `_coefficients` works
-  around it.
 - `compare.py` estimates MCNP volume as mesh volume + (MCNP-only − CAD-only) samples,
   which is unbiased and only noisy where CAD and MCNP disagree.
 - `src/radmodeling/spaceclaim/*.py` are IronPython 2.7 scripts (no f-strings, no type
   hints, SpaceClaim API names are injected globals, helpers prefixed `rm_`). They are
   run through loaders written by `radmod spaceclaim-loaders`. They cannot be tested
   here: keep logic out of them.
-- `src/csv_based_workflow`, `src/cad_to_mcnp_comparison`, `src/miscellaneous`,
-  `src/legacy` are the version 1 scripts, kept for reference and excluded from lint.
 
 ## Conventions
 
