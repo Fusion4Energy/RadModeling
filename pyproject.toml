@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "radmodeling"
+version = "2.0.0.dev0"
+description = "CAD preparation and CAD-to-MCNP quality assurance tools"
+readme = "README.md"
+license = { text = "EUPL-1.1" }
+requires-python = ">=3.10"
+dependencies = [
+    "cadquery-ocp-novtk>=7.8",
+    "migjorn>=0.3.11",
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "typer>=0.12",
+    "rich>=13",
+    "tomli>=2.0; python_version < '3.11'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+radmod = "radmodeling.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/radmodeling"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.pyright]
+# SpaceClaim scripts run in IronPython with names injected by SpaceClaim
+exclude = [
+    "src/radmodeling/spaceclaim",
+    "src/csv_based_workflow",
+    "src/cad_to_mcnp_comparison",
+    "src/miscellaneous",
+    "src/legacy",
+    ".venv",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+extend-exclude = ["src/csv_based_workflow", "src/cad_to_mcnp_comparison", "src/miscellaneous", "src/legacy"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+# IronPython 2.7 scripts run inside SpaceClaim, where the API names are injected globals
+"src/radmodeling/spaceclaim/*.py" = ["F821", "UP", "B", "SIM"]

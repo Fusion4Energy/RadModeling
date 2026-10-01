@@ -1,6 +1,12 @@
 Usage
 =====
 
+.. note::
+
+   This section documents the version 1 SpaceClaim scripts in ``src/csv_based_workflow``,
+   ``src/cad_to_mcnp_comparison`` and ``src/miscellaneous``. They are superseded by the
+   ``radmod`` command and its SpaceClaim tools, see :doc:`workflow`.
+
 There are two types of scripts in RadModeling: IronPython scripts and CPython scripts. 
 IronPython scripts are meant to be imported directly into SpaceClaim. CPython scripts
 are meant to be run typically in a command prompt with Python3 installed. This page

@@ -1,75 +1,86 @@
 ![GitHub last commit](https://img.shields.io/github/last-commit/Fusion4Energy/RadModeling)
 ![GitHub issues](https://img.shields.io/github/issues/Fusion4Energy/RadModeling)
-![GitHub closed issues](https://img.shields.io/github/issues-closed-raw/Fusion4Energy/RadModeling)
-![GitHub top language](https://img.shields.io/github/languages/top/Fusion4Energy/RadModeling)
 ![](https://img.shields.io/badge/license-EU%20PL-blue)
 
-![RadModeling Logo](docs/source/_static/logo.png) 
+![RadModeling Logo](docs/source/_static/logo.png)
+
 # RadModeling
 
-RadModeling is a collection of several scripts. Many of them are written in IronPython and can 
-be imported directly into SpaceClaim. Other scripts are meant to be run with CPython. 
-Please refer to the documentation of each tool to understand how to use it.
+RadModeling prepares CAD models for Monte Carlo radiation transport and checks the
+MCNP geometry obtained from them. It is a Python package with a command line tool,
+`radmod`, plus a few thin SpaceClaim tools for the interactive part of the work.
 
-Please take a look at the online documentation in [here](https://radmodeling.readthedocs.io/en/latest/).
+```
+original.step ──radmod init──▶ tagged.step + registry.csv
+                                   │
+                    simplify in SpaceClaim (or any CAD program)
+                                   │
+simplified.step ──radmod check──▶ volume deviations, tori, splines, invalid solids
+                ──radmod export─▶ for_conversion.step + cell map
+                                   │
+                         GEOUNED (or another converter)
+                                   │
+model.mcnp ──radmod compare──▶ CAD vs MCNP volumes, density correction factors
+           ──radmod materials─▶ materials, densities and comments in the cells
+           ──radmod slice─────▶ slice plots with the CAD overlaid
+```
 
-<video width="90%" max-width="1080px" controls autoplay loop muted>
-  <source src="docs/source/_static/SpaceClaim_adjust_volume.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+* **Stable component IDs**: tags like `Pump casing [rm:12]` in the component names
+  survive any CAD program, so simplified models always match the original components.
+* **One registry**: an Excel-friendly CSV with materials, densities, volumes and
+  density correction factors.
+* **CAD vs MCNP comparison without running MCNP**: the MCNP cells are evaluated
+  directly to measure their volumes, their disagreement with the CAD, and to plot
+  slices with the CAD on top.
+* **Geometry tools**: toroidal elbows to mitred cylinders, FMESH cards from boxes.
+* **SpaceClaim tools published once** that always run the latest installed code.
 
-## List of tools
+## Installation
 
-* `CSV workflow`. A set of scripts that greatly streamline and 
-  facilitate the CAD to MCNP process.
+```bash
+pip install git+https://github.com/Fusion4Energy/RadModeling.git
+```
 
-  * `Prepare CAD`. Prepares the CAD model for the 
-    workflow. It makes all the components independent of each other and assigns a unique ID to 
-    each.
-  * `CSV generator`. Generates or updates the CSV file
-    that contains all the information of the model as read by SpaceClaim.
-  * `Detect volumes to adjust`. Highlights 
-    the components that exceed the maximum volume deviation after simplification.
-  * `Adjust volume`. Automatically extrudes the
-    selected faces of a component to match the original volume of the component.
-  * `Show by material`. Display only the components
-    made of a selected list of materials.
-  * `Save STEP`. Saves the CAD model as a STEP file
-    in a way that the MCNP cell IDs will match the order of the CAD components.
-  * `MCNP materials from CSV`. Updates the
-    MCNP file with the materials, densities, density correction factors and component 
-    names from the CSV file.
+For development, or for SpaceClaim tools that update with `git pull`:
 
-* `CAD to MCNP comparison`. This tool compares the 
-  geometry of a CAD file in SpaceClaim with the geometry of the MCNP input file 
-  generated from it. It can be used to check that the geometry in the CAD file is
-  correctly translated to the MCNP input file.
+```bash
+git clone https://github.com/Fusion4Energy/RadModeling.git
+cd RadModeling
+pip install -e ".[dev]"
+```
 
-* `Miscellaneous`. Set of one-off scripts that perform an 
-  independent task.
+## Quick start
 
-  * `Elbow to cylinder`. Converts the toroidal elbows typically
-    found in pipes in a set of cylinders.
-  * `Detect torus`. Highlights all the bodies that 
-    contain a toroidal surface.
-  * `FMESH tally generator`. Generates a 
-    FMESH tally card for MCNP from an arbitrarily sized and place SpaceClaim prismatic 
-    body.
-  * `Load CSV points`. Generates a set of points 
-    in SpaceClaim from a CSV file. Synergizes with F4Enix lost particles features.
-  * `Simplify toroidal profiles`. Simplifies the toroidal profile of a body 
-    substituting the curves of its section with straight lines with a given angle between
-    them.
+```bash
+radmod init machine.step                       # tag + registry
+# fill the 'material' column of machine_registry.csv
+# simplify machine_tagged.step in SpaceClaim, export simplified.step
+radmod check simplified.step -r machine_registry.csv
+radmod export simplified.step -r machine_registry.csv -o for_conversion.step
+# convert for_conversion.step to model.mcnp with GEOUNED
+radmod compare for_conversion.step model.mcnp -m for_conversion_cells.csv -r machine_registry.csv
+radmod materials model.mcnp -r machine_registry.csv -m for_conversion_cells.csv -l materials.toml
+radmod slice model_materials.mcnp -o slice.png --normal z --step for_conversion.step -m for_conversion_cells.csv
+```
 
-* `Legacy`. Set of scripts that are either obsolete or outdated but may be useful
-  in an future update.
+SpaceClaim tools: `radmod spaceclaim-loaders <folder>` and publish the loaders once.
 
-  * `Report generation`. Automatically generates a 
-    report with images and information of each component.
-  * `Piping from CSV`. Generates a set of pipes from information read from a CSV 
-    file. 
+Full documentation: https://radmodeling.readthedocs.io
 
+## Version 1 scripts
+
+The original IronPython scripts are still in `src/csv_based_workflow`,
+`src/cad_to_mcnp_comparison`, `src/miscellaneous` and `src/legacy`, and documented
+under "Version 1" in the documentation. They are superseded by `radmod`.
 
 ## License
-Copyright 2019 F4E | European Joint Undertaking for ITER and the Development of Fusion Energy (‘Fusion for Energy’). Licensed under the EUPL, Version 1.1 or - as soon they will be approved by the European Commission - subsequent versions of the EUPL (the “Licence”). You may not use this work except in compliance with the Licence. You may obtain a copy of the Licence at: http://ec.europa.eu/idabc/eupl.html   
-Unless required by applicable law or agreed to in writing, software distributed under the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the Licence permissions and limitations under the Licence.
+
+Copyright 2019 F4E | European Joint Undertaking for ITER and the Development of Fusion
+Energy (‘Fusion for Energy’). Licensed under the EUPL, Version 1.1 or - as soon they
+will be approved by the European Commission - subsequent versions of the EUPL (the
+“Licence”). You may not use this work except in compliance with the Licence. You may
+obtain a copy of the Licence at: http://ec.europa.eu/idabc/eupl.html
+Unless required by applicable law or agreed to in writing, software distributed under
+the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS OF
+ANY KIND, either express or implied. See the Licence permissions and limitations under
+the Licence.

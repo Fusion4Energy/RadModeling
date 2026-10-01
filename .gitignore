@@ -4,4 +4,4 @@ __pycache__/
 *.db
 *.csv
 !materials_id.csv
-.*/
+.*/!.github/
