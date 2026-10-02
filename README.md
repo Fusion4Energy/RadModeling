@@ -23,6 +23,7 @@ simplified.step ──radmod check──▶ volume deviations, tori, splines, in
 model.mcnp ──radmod compare───▶ CAD vs MCNP volumes, density correction factors
            ──radmod materials─▶ materials and densities in the cells
            ──radmod slice─────▶ slice plots with the CAD overlaid
+           ──radmod atlas─────▶ PDF of slices: whole model + worst instances
 ```
 
 * **Stable component IDs**: tags like `Pump casing [rm12]` in the component names
@@ -64,6 +65,7 @@ radmod export simplified.step -r machine_registry.csv -o for_conversion.step
 radmod compare for_conversion.step model.mcnp -r machine_registry.csv
 radmod materials model.mcnp -r machine_registry.csv -l materials.toml
 radmod slice model_materials.mcnp -o slice.png --normal z --step for_conversion.step
+radmod atlas model_materials.mcnp --step for_conversion.step -o atlas.pdf --report compare.csv
 ```
 
 SpaceClaim tools: `radmod spaceclaim-loaders <folder>` and publish the loaders once.

@@ -19,6 +19,7 @@ MCNP geometry obtained from them. It is a Python package with a command line too
    model.mcnp ──radmod compare───▶ CAD vs MCNP volumes, density correction factors
               ──radmod materials─▶ materials and densities in the cells
               ──radmod slice─────▶ slice plots with the CAD overlaid
+              ──radmod atlas─────▶ PDF of slices: whole model + worst instances
 
 What it gives you
 -----------------

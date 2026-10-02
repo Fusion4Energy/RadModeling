@@ -199,8 +199,20 @@ class SliceResult:
     cells: np.ndarray  # (n_v, n_u) cell number per pixel, 0 = no cell
     overlaps: np.ndarray  # (n_v, n_u) True where several cells contain the pixel
     materials: np.ndarray  # (n_v, n_u) material number, -1 = no cell
-    cad_component: np.ndarray | None = None  # component id per pixel, 0 = none
-    mcnp_component: np.ndarray | None = None
+    # (n_v, n_u) True where the CAD instance and the instance of the cell differ
+    mismatch: np.ndarray | None = None
+
+    @property
+    def lost_pixels(self) -> int:
+        return int((self.materials == -1).sum())
+
+    @property
+    def overlap_pixels(self) -> int:
+        return int(self.overlaps.sum())
+
+    @property
+    def mismatch_pixels(self) -> int | None:
+        return None if self.mismatch is None else int(self.mismatch.sum())
 
 
 def slice_mcnp(geometry: Geometry, plane: Plane, n_u: int, n_v: int) -> SliceResult:
@@ -212,9 +224,9 @@ def slice_mcnp(geometry: Geometry, plane: Plane, n_u: int, n_v: int) -> SliceRes
     shape = (n_v, n_u)
     return SliceResult(
         plane,
-        owner.reshape(shape),
+        owner.reshape(shape).astype(np.int32),
         (count > 1).reshape(shape),
-        materials.reshape(shape),
+        materials.reshape(shape).astype(np.int32),
     )
 
 

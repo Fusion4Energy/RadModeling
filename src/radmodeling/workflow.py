@@ -20,6 +20,7 @@ look alike), except for components with a single row and a single body.
 from __future__ import annotations
 
 import os
+import re
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -488,9 +489,15 @@ def export(
     return ExportResult(keys, added, untagged)
 
 
-def exported_solids(step: str | os.PathLike) -> dict[Key, list[TopoDS_Solid]]:
-    """The solids of a STEP file written by :func:`export`, by registry key."""
-    result: dict[Key, list[TopoDS_Solid]] = defaultdict(list)
+@dataclass
+class ExportedInstance:
+    name: str  # component name
+    solids: list[TopoDS_Solid] = field(default_factory=list)
+
+
+def read_exported(step: str | os.PathLike) -> dict[Key, ExportedInstance]:
+    """The instances of a STEP file written by :func:`export`, by registry key."""
+    result: dict[Key, ExportedInstance] = {}
     for part in read_step(step):
         key = find_key(part.name)
         if key is None:
@@ -498,5 +505,11 @@ def exported_solids(step: str | os.PathLike) -> dict[Key, list[TopoDS_Solid]]:
                 f"{os.fspath(step)}: {part.name!r} has no '[rmID.instance]' tag: use "
                 "the STEP file written by 'radmod export'"
             )
-        result[key].extend(part.solids)
-    return dict(result)
+        name = re.sub(r" #\d+$", "", untag_name(part.name))  # solid suffix
+        result.setdefault(key, ExportedInstance(name)).solids.extend(part.solids)
+    return result
+
+
+def exported_solids(step: str | os.PathLike) -> dict[Key, list[TopoDS_Solid]]:
+    """The solids of a STEP file written by :func:`export`, by registry key."""
+    return {key: i.solids for key, i in read_exported(step).items()}

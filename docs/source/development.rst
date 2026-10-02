@@ -17,7 +17,8 @@ Layout
      registry.py       component registry and [rmID] tags
      workflow.py       init, check and export
      compare.py        CAD vs MCNP sampling and slices
-     plot.py           slice rendering
+     slices.py         slices of a model and the planes of the atlas
+     plot.py           slice and atlas rendering
      fmesh.py          FMESH cards from boxes
      cad/              OpenCascade: STEP, meshes, sections, analysis, elbows
      mcnp/             MCNP geometry evaluation, cell tags, material assignment

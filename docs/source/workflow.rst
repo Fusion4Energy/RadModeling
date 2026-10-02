@@ -230,3 +230,29 @@ them).
 Plots the MCNP cells coloured by material with the CAD section on top. Regions in no
 cell (where particles would get lost), overlapping cells and, with the STEP file from
 ``export``, CAD/MCNP mismatches are highlighted. Without ``--origin`` and ``--width`` the slice covers the whole CAD model.
+
+For a document that covers the whole model, write an atlas:
+
+.. code-block:: bash
+
+   radmod atlas model_materials.mcnp --step for_conversion.step -o atlas.pdf \
+       --planes x:3,y:3,z:6 --report compare.csv --worst 20
+
+The PDF has:
+
+* **summary pages** with one row per slice: the pixels in no cell, in several cells
+  and where CAD and MCNP disagree, problems in red;
+* **overview slices**: ``--planes x:3,y:3,z:6`` cuts the CAD bounding box with 3
+  evenly spaced planes normal to x, 3 normal to y and 6 normal to z, never on its
+  faces;
+* **problem slices**: with the ``--report`` written by ``compare``, one page for each
+  of the ``--worst`` instances beyond ``--threshold``, worst first, after those that
+  could not be evaluated or have no tagged cells. Each cuts the instance through its
+  centre, normal to its thinnest direction so that it shows its largest section,
+  zoomed on it with some surroundings.
+
+Materials keep the same colour on every page. ``--resolution`` (400 pixels across
+by default, half that of ``slice``) trades detail for time: every page classifies all
+its pixels against the MCNP cells and the CAD. A few isolated mismatching pixels
+along the CAD outlines are normal: they are pixels on the surfaces, where the
+tessellated CAD and the exact MCNP surfaces differ by less than a pixel.

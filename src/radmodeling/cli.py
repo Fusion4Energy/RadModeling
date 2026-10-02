@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
-import contextlib
 import csv
 import json
 from pathlib import Path
-from typing import Annotated, NoReturn
+from typing import TYPE_CHECKING, Annotated, NoReturn
 
 import numpy as np
 import typer
 from rich.console import Console
 from rich.markup import escape as esc
 from rich.table import Table
+
+if TYPE_CHECKING:
+    from radmodeling.compare import SliceResult
 
 app = typer.Typer(
     help="CAD preparation and CAD-to-MCNP quality assurance tools.",
@@ -546,37 +548,16 @@ def slice_(
 
     Without --origin/--width the slice covers the CAD model (if given) or must be set.
     """
-    from radmodeling.cad.section import section_polylines
-    from radmodeling.cad.step import read_step
-    from radmodeling.compare import (
-        MM_PER_CM,
-        Plane,
-        classify_cad_on_plane,
-        near_plane,
-        slice_mcnp,
-    )
-    from radmodeling.mcnp.geometry import Geometry
-    from radmodeling.mcnp.materials import MaterialLibrary
-    from radmodeling.mcnp.tags import cells_by_instance
-    from radmodeling.plot import material_slots, render_slice
-    from radmodeling.workflow import exported_solids
+    from radmodeling.compare import Plane
+    from radmodeling.plot import render_slice
+    from radmodeling.slices import load_scene, make_slice
 
-    geometry = Geometry.from_file(mcnp)
-    cells = cells_by_instance(geometry.model)
-    by_instance = {}
-    if step and cells:
-        with contextlib.suppress(ValueError):  # not from 'export': overlay only
-            by_instance = exported_solids(step)
-    solids = [s for group in by_instance.values() for s in group]
-    if step and not by_instance:
-        solids = [s for part in read_step(step) for s in part.solids]
-
+    with console.status("Reading the models..."):
+        scene = load_scene(mcnp, step, _library_names(library))
     centre, extent = None, None
-    if solids:
-        from radmodeling.cad.occ import bounding_box
-
-        boxes = np.array([bounding_box(s) for s in solids]) / MM_PER_CM
-        lo, hi = boxes[:, :3].min(axis=0), boxes[:, 3:].max(axis=0)
+    bounds = scene.bounds_cm()
+    if bounds is not None:
+        lo, hi = bounds
         centre, extent = (lo + hi) / 2, (hi - lo) * 1.05
     if origin:
         centre = np.array([float(v) for v in origin.split(",")])
@@ -597,67 +578,138 @@ def slice_(
         vector = [float(v) for v in normal.split(",")]
         plane = Plane.from_normal(centre, vector, w, height)
 
-    n_u = resolution
-    n_v = max(int(round(resolution * plane.height / plane.width)), 1)
-    with console.status("Classifying the MCNP geometry..."):
-        result = slice_mcnp(geometry, plane, n_u, n_v)
-
-    outlines = []
-    if solids:
-        with console.status("Cutting the CAD..."):
-            reach = np.hypot(plane.width, plane.height) / 2 * MM_PER_CM
-            for solid in solids:
-                if not near_plane(solid, plane, reach):
-                    continue
-                for line in section_polylines(
-                    solid, plane.origin * MM_PER_CM, plane.normal
-                ):
-                    local = line / MM_PER_CM - plane.origin
-                    outlines.append(np.column_stack([local @ plane.u, local @ plane.v]))
-        if by_instance:
-            with console.status("Comparing CAD and MCNP..."):
-                # Pixels are labelled 1, 2, 3... by instance
-                label = {key: n for n, key in enumerate(sorted(by_instance), 1)}
-                result.cad_component = classify_cad_on_plane(
-                    {label[k]: group for k, group in by_instance.items()},
-                    plane,
-                    n_u,
-                    n_v,
-                )
-                owner = {}
-                for key, numbers in cells.items():
-                    if key in label:
-                        owner.update(dict.fromkeys(numbers, label[key]))
-                result.mcnp_component = np.vectorize(lambda c: owner.get(int(c), 0))(
-                    result.cells
-                )
-
-    counts: dict[int, int] = {}
-    for cell in geometry.cells.values():
-        counts[cell.material] = counts.get(cell.material, 0) + 1
-    names = {}
-    for card in geometry.model.materials():
-        # 'materials' writes the material name as a comment on the card
-        first_line = card.text.splitlines()[0]
-        if card.id is not None and "$" in first_line:
-            label = first_line.split("$", 1)[1].strip()
-            names[card.id] = f"{label} (m{card.id})" if label else f"m{card.id}"
-    if library:
-        for material in MaterialLibrary.load(library).materials:
-            if material.number is not None:
-                names[material.number] = f"{material.name} (m{material.number})"
-    render_slice(result, output, material_slots(counts), names, outlines)
-
-    lost = int((result.materials == -1).sum())
-    overlaps = int(result.overlaps.sum())
+    with console.status("Slicing..."):
+        item = make_slice(scene, plane, resolution)
+    render_slice(item.result, output, scene.slots, scene.material_names, item.outlines)
     console.print(f"[green]Written[/] {esc(str(output))}")
-    if lost:
+    _print_slice_problems(item.result)
+
+
+def _library_names(library: Path | None) -> dict[int, str]:
+    """Material names of the library, by MCNP material number."""
+    if library is None:
+        return {}
+    from radmodeling.mcnp.materials import MaterialLibrary
+
+    return {
+        m.number: f"{m.name} (m{m.number})"
+        for m in MaterialLibrary.load(library).materials
+        if m.number is not None
+    }
+
+
+def _print_slice_problems(result: SliceResult) -> None:
+    if result.lost_pixels:
+        lost = result.lost_pixels
         console.print(f"[yellow]{lost} pixels are in no cell (undefined geometry)[/]")
-    if overlaps:
-        console.print(f"[yellow]{overlaps} pixels are in more than one cell[/]")
-    if result.cad_component is not None and result.mcnp_component is not None:
-        mismatch = int((result.cad_component != result.mcnp_component).sum())
-        console.print(f"CAD/MCNP mismatching pixels: {mismatch}")
+    if result.overlap_pixels:
+        console.print(
+            f"[yellow]{result.overlap_pixels} pixels are in more than one cell[/]"
+        )
+    if result.mismatch_pixels is not None:
+        console.print(f"CAD/MCNP mismatching pixels: {result.mismatch_pixels}")
+
+
+@app.command()
+def atlas(
+    mcnp: Annotated[Path, typer.Argument(help="MCNP input.")],
+    step: Annotated[
+        Path,
+        typer.Option(
+            help="STEP model to overlay. With the one from 'export', CAD/MCNP "
+            "mismatches are highlighted."
+        ),
+    ],
+    output: Annotated[Path, typer.Option("--output", "-o", help="PDF to write.")],
+    planes: Annotated[
+        str,
+        typer.Option(help="Evenly spaced planes normal to each axis, e.g. 'x:3,z:6'."),
+    ] = "x:3,y:3,z:3",
+    report: Annotated[
+        Path | None,
+        typer.Option(help="Report CSV of 'compare': adds a slice per worst instance."),
+    ] = None,
+    worst: Annotated[
+        int, typer.Option(help="Maximum number of instances sliced from the report.")
+    ] = 20,
+    threshold: Annotated[
+        float, typer.Option(help="Discrepancy that makes an instance a problem [%].")
+    ] = 1.0,
+    resolution: Annotated[int, typer.Option(help="Pixels along the width.")] = 400,
+    library: Annotated[
+        Path | None, typer.Option("--library", "-l", help="For material names.")
+    ] = None,
+) -> None:
+    """Write a PDF atlas of slices: across the whole model and through the worst
+    instances of a 'compare' report.
+
+    The first pages summarise the pixels in no cell, in several cells and where CAD
+    and MCNP disagree for every slice. Material colours are the same on all pages.
+    """
+    from radmodeling.plot import write_atlas
+    from radmodeling.slices import (
+        instance_plane,
+        load_scene,
+        make_slice,
+        overview_planes,
+        parse_plane_counts,
+        read_problems,
+    )
+
+    try:
+        counts = parse_plane_counts(planes)
+    except ValueError as exc:
+        _fail(str(exc))
+    with console.status("Reading the models..."):
+        scene = load_scene(mcnp, step, _library_names(library))
+    bounds = scene.bounds_cm()
+    if bounds is None:
+        _fail(f"{step} has no solids")
+    todo = overview_planes(*bounds, counts)
+
+    if report:
+        if not scene.instances:
+            _fail(f"--report needs the STEP file written by 'export', not {step}")
+        problems = read_problems(report, threshold)
+        missing = [p.key for p in problems if p.key not in scene.instances]
+        if missing:
+            console.print(
+                f"[yellow]Instances of the report not in {esc(str(step))}:[/] "
+                + _keys_text(missing)
+            )
+        problems = [p for p in problems if p.key in scene.instances]
+        for problem in problems[:worst]:
+            instance = scene.instances[problem.key]
+            title = f"{problem.key} {instance.name}: discrepancy "
+            title += f"{problem.discrepancy_pct:.3g} %"
+            if problem.note:
+                title += f" ({problem.note})"
+            todo.append((title, instance_plane(instance.solids)))
+        if len(problems) > worst:
+            console.print(
+                f"[yellow]{len(problems) - worst} more problem instances[/] were left "
+                "out (see --worst)"
+            )
+    if not todo:
+        _fail("no slices to draw: give --planes or a --report with problems")
+
+    slices = []
+    with console.status("") as status:
+        for i, (title, plane) in enumerate(todo, 1):
+            status.update(f"Slice {i}/{len(todo)}: {esc(title)}")
+            slices.append(make_slice(scene, plane, resolution, title))
+    header = [f"MCNP input: {mcnp}", f"CAD: {step}"]
+    if report:
+        header.append(f"Compare report: {report} (threshold {threshold:g} %)")
+    with console.status("Writing the PDF..."):
+        write_atlas(slices, output, scene.slots, scene.material_names, header)
+
+    bad = [s for s in slices if s.result.lost_pixels or s.result.overlap_pixels]
+    bad += [s for s in slices if s.result.mismatch_pixels and s not in bad]
+    console.print(
+        f"[green]Written {len(slices)} slices[/] to {esc(str(output))}. "
+        f"Slices with problems: {len(bad)}"
+    )
 
 
 # --- geometry tools ------------------------------------------------------------------

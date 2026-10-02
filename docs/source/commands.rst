@@ -37,6 +37,11 @@ Workflow
    ``--origin`` is the centre of the image; ``--step`` overlays the CAD and, with the
    STEP file from ``export``, highlights CAD/MCNP mismatches.
 
+``radmod atlas MODEL.mcnp --step OUT.step -o ATLAS.pdf``
+   PDF with a summary of the problems of every slice, evenly spaced slices across the
+   model (``--planes x:3,y:3,z:6``) and, with ``--report COMPARE.csv``, a zoomed slice
+   through each of the ``--worst`` instances of a ``compare`` report.
+
 Geometry tools
 --------------
 
