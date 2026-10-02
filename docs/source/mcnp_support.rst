@@ -32,4 +32,6 @@ Performance
 Cells and bounded surfaces (spheres, cylinders, tori, macrobodies, axis-aligned
 planes) are only evaluated on the points inside their bounding boxes. As a reference,
 on a model of 1000 components a slice of 800 × 500 pixels takes about 2 s, and
-``compare`` with 20 000 points per component about 9 s.
+``compare`` with 20 000 points per component about 9 s. A GEOUNED model of 4194 solids
+in 29 instances (``compare`` with the default 100 000 points per instance) takes
+about 25 s to compare, plus 25 s to read its 150 MB STEP file.

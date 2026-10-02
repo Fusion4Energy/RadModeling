@@ -57,6 +57,15 @@ def compare_component(
     margin: float = 0.05,
     rng: np.random.Generator | None = None,
 ) -> VolumeComparison:
+    """Compare the CAD solids of an instance with its MCNP cells by point sampling.
+
+    The points are spread over the bounding box of every solid (padded by
+    ``margin``), in proportion to the box volumes, so that instances made of many
+    small solids scattered far apart are sampled as densely as compact ones. Each
+    point is weighted by one over the number of boxes that contain it, which keeps
+    every estimate unbiased where boxes overlap. Every box gets at least two lines, so
+    instances with many solids can get a few more points than ``n_points``.
+    """
     rng = rng or np.random.default_rng()
     try:
         meshes = [triangulate(s) for s in solids]
@@ -64,26 +73,33 @@ def compare_component(
         return _failed(key, cells, float("nan"), f"CAD: {exc}")
     cad_volume = sum(m.volume for m in meshes) / 1000.0
 
-    lo, hi = _union_bounds(solids)
-    size = hi - lo
-    pad = margin * size + 1e-3 * max(size.max(), 1.0)
-    lo, hi = lo - pad, hi + pad
-    box_volume_cm3 = float(np.prod(hi - lo)) / 1000.0
+    boxes = _padded_boxes(solids, margin)  # (B, 6) mm
+    box_volumes = np.prod(boxes[:, 3:] - boxes[:, :3], axis=1) / 1000.0  # cm3
+    lines_per_box = _allocate_lines(box_volumes, max(n_points // points_per_line, 1))
+    box_of_line = np.repeat(np.arange(len(boxes)), lines_per_box)
+    lo, hi = boxes[box_of_line, :3], boxes[box_of_line, 3:]
+    n_lines = len(box_of_line)
+    line_uv = lo[:, :2] + rng.random((n_lines, 2)) * (hi - lo)[:, :2]
+    t = lo[:, 2:] + rng.random((n_lines, points_per_line)) * (hi - lo)[:, 2:]
+    points = np.concatenate(
+        [np.broadcast_to(line_uv[:, None, :], (*t.shape, 2)), t[..., None]], axis=-1
+    )  # (L, K, 3) mm
+    weight = 1.0 / _box_multiplicity(points, boxes, lines_per_box)
 
-    n_lines = max(n_points // points_per_line, 1)
-    line_uv = lo[:2] + rng.random((n_lines, 2)) * (hi - lo)[:2]
-    t = lo[2] + rng.random((n_lines, points_per_line)) * (hi - lo)[2]
     frame = LineFrame(np.zeros(3), np.eye(3))
-
     in_cad = np.zeros(t.shape, dtype=bool)
     for mesh in meshes:
-        in_cad |= inside_on_lines(mesh, frame, line_uv, t)
+        mesh_lo, mesh_hi = mesh.bounds
+        crossing = np.flatnonzero(
+            np.all((line_uv >= mesh_lo[:2]) & (line_uv <= mesh_hi[:2]), axis=1)
+        )
+        if crossing.size:
+            in_cad[crossing] |= inside_on_lines(
+                mesh, frame, line_uv[crossing], t[crossing]
+            )
 
-    points_mm = np.column_stack(
-        [np.repeat(line_uv, points_per_line, axis=0), t.ravel()]
-    )
-    evaluator = geometry.evaluator(points_mm / MM_PER_CM)
-    in_cell = np.zeros(len(points_mm), dtype=bool)
+    evaluator = geometry.evaluator(points.reshape(-1, 3) / MM_PER_CM)
+    in_cell = np.zeros(points.shape[0] * points.shape[1], dtype=bool)
     try:
         for cell in cells:
             in_cell |= evaluator.cell(cell)
@@ -93,26 +109,69 @@ def compare_component(
 
     cad_only = in_cad & ~in_cell
     mcnp_only = in_cell & ~in_cad
-    # Batch means per line account for the correlation of points on the same line
-    per_line = (mcnp_only.astype(float) - cad_only).mean(axis=1)
-    mcnp_volume = cad_volume + per_line.mean() * box_volume_cm3
-    std = per_line.std(ddof=1) / np.sqrt(n_lines) * box_volume_cm3 if n_lines > 1 else 0
 
-    # Cells reaching the faces of the sampling box probably continue beyond it
-    near = 0.01 * (hi - lo)
-    points = points_mm.reshape(*t.shape, 3)
-    on_faces = np.any((points < lo + near) | (points > hi - near), axis=-1)
+    def integral(values: np.ndarray) -> tuple[float, float]:
+        """Integral over the union of the boxes and its variance. Batch means per
+        line account for the correlation of points on the same line."""
+        line_means = (values * weight).mean(axis=1)
+        n = lines_per_box
+        mean = np.bincount(box_of_line, line_means, len(boxes)) / n
+        squares = np.bincount(box_of_line, line_means**2, len(boxes))
+        variance = np.maximum(squares - n * mean**2, 0) / (n - 1)
+        estimate = float(box_volumes @ mean)
+        return estimate, float(box_volumes**2 @ (variance / n))
 
+    difference, variance = integral(mcnp_only.astype(float) - cad_only)
+
+    # Cells reaching the faces of the sampling boxes, away from any other box,
+    # probably continue beyond them
+    near = 0.01 * (hi - lo)[:, None, :]
+    on_faces = np.any(
+        (points < lo[:, None, :] + near) | (points > hi[:, None, :] - near), axis=-1
+    )
     return VolumeComparison(
         key=key,
         cells=cells,
         cad_volume_cm3=cad_volume,
-        mcnp_volume_cm3=float(mcnp_volume),
-        mcnp_volume_std_cm3=float(std),
-        cad_only_cm3=float(cad_only.mean() * box_volume_cm3),
-        mcnp_only_cm3=float(mcnp_only.mean() * box_volume_cm3),
-        touches_sampling_box=bool(np.any(in_cell & on_faces)),
+        mcnp_volume_cm3=cad_volume + difference,
+        mcnp_volume_std_cm3=float(np.sqrt(variance)),
+        cad_only_cm3=integral(cad_only.astype(float))[0],
+        mcnp_only_cm3=integral(mcnp_only.astype(float))[0],
+        touches_sampling_box=bool(np.any(in_cell & on_faces & (weight == 1))),
     )
+
+
+def _padded_boxes(solids: Sequence[TopoDS_Shape], margin: float) -> np.ndarray:
+    """(B, 6) bounding boxes of the solids, enlarged by a margin on every side."""
+    boxes = np.array([bounding_box(s) for s in solids], dtype=float)
+    size = boxes[:, 3:] - boxes[:, :3]
+    pad = margin * size + 1e-3 * np.maximum(size.max(axis=1, keepdims=True), 1.0)
+    return np.hstack([boxes[:, :3] - pad, boxes[:, 3:] + pad])
+
+
+def _allocate_lines(box_volumes: np.ndarray, n_lines: int) -> np.ndarray:
+    """Lines per box, in proportion to the box volume, and at least two (needed for
+    the variance)."""
+    share = box_volumes / box_volumes.sum() * n_lines
+    return np.maximum(np.round(share).astype(np.int64), 2)
+
+
+def _box_multiplicity(
+    points: np.ndarray, boxes: np.ndarray, lines_per_box: np.ndarray
+) -> np.ndarray:
+    """Number of boxes containing every point. The points of each box are stored
+    contiguously, and only boxes overlapping theirs are checked."""
+    count = np.ones(points.shape[:2], dtype=np.int64)
+    lo, hi = boxes[:, :3], boxes[:, 3:]
+    ends = np.cumsum(lines_per_box)
+    for j in range(len(boxes)):
+        overlapping = np.flatnonzero(np.all((lo <= hi[j]) & (hi >= lo[j]), axis=1))
+        rows = slice(ends[j] - lines_per_box[j], ends[j])
+        for k in overlapping:
+            if k != j:
+                inside = (points[rows] >= lo[k]) & (points[rows] <= hi[k])
+                count[rows] += np.all(inside, axis=-1)
+    return count
 
 
 def _failed(
@@ -130,11 +189,6 @@ def _failed(
         touches_sampling_box=False,
         error=error,
     )
-
-
-def _union_bounds(solids: Sequence[TopoDS_Shape]) -> tuple[np.ndarray, np.ndarray]:
-    boxes = np.array([bounding_box(s) for s in solids])
-    return boxes[:, :3].min(axis=0), boxes[:, 3:].max(axis=0)
 
 
 # --- slices ------------------------------------------------------------------------

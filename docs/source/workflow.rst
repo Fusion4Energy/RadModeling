@@ -173,17 +173,21 @@ the converter has an option for it, and convert the STEP file as written by
    radmod compare for_conversion.step model.mcnp -r machine_registry.csv \
        --report compare.csv
 
-For every instance, random points in its bounding box are classified against both
-the CAD solids and the MCNP cells. ``--components 3,7.2`` limits it to all the
-instances of component 3 and instance 2 of component 7. This gives:
+For every instance, random points are classified against both the CAD solids and
+the MCNP cells. The points (``--points``, 100 000 by default) are spread over the
+bounding box of each solid, not over the box of the whole instance, so an instance
+made of hundreds of small solids scattered across the machine is sampled as densely
+as a compact one. Points where the boxes of several solids overlap are weighted down
+accordingly, so the estimates stay unbiased. ``--components 3,7.2`` limits it to all
+the instances of component 3 and instance 2 of component 7. This gives:
 
 * the **MCNP volume** of the component with its uncertainty. The estimate only depends
   on the points where CAD and MCNP disagree, so it is very precise when the conversion
   is good. It goes into the registry and sets the density correction factor.
 * the **discrepancy**: the volume where CAD and MCNP disagree, relative to the CAD
   volume. Above the ``--threshold`` (1 % by default) the component is reported.
-* a warning when the cells reach the border of the sampled box, meaning they extend
-  well beyond the CAD component.
+* a warning when the cells reach the border of the sampled boxes, meaning they
+  extend well beyond the CAD solids.
 
 Instances of the STEP file without tagged cells are reported with a 100 %
 discrepancy, and cell tags of instances that are not in the STEP file are listed.

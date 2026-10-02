@@ -409,6 +409,54 @@ def test_compare_component(radius, matches):
     assert not result.touches_sampling_box
 
 
+TWO_RODS = """Two rods 0.5 mm apart, so that their sampling boxes overlap
+1 0  -1 2 -3   imp:n=1
+2 0  -4 2 -3   imp:n=1
+3 0  -9 #1 #2  imp:n=1
+4 0  9         imp:n=0
+
+1 c/z 0 0 0.5
+2 pz 0
+3 pz 2
+4 c/z 1.05 0 0.5
+9 so 50
+
+mode n
+"""
+
+
+@pytest.mark.parametrize(("cells", "fraction"), [([1, 2], 1.0), ([1], 0.5)])
+def test_compare_is_unbiased_where_sampling_boxes_overlap(cells, fraction):
+    rods = [models.cylinder(0, 0, 0, 5, 20), models.cylinder(10.5, 0, 0, 5, 20)]
+    geometry = Geometry(migjorn.parse(TWO_RODS))
+    result = compare_component(
+        Key(1), rods, cells, geometry, n_points=40_000, rng=np.random.default_rng(3)
+    )
+    rod = math.pi * 0.5**2 * 2
+    assert result.cad_volume_cm3 == pytest.approx(2 * rod, rel=1e-3)
+    # The tessellated CAD is 0.03 % smaller than the exact MCNP cylinders
+    tolerance = 4 * result.mcnp_volume_std_cm3 + 2e-3
+    assert result.mcnp_volume_cm3 == pytest.approx(fraction * 2 * rod, abs=tolerance)
+    assert result.cad_only_cm3 == pytest.approx((1 - fraction) * 2 * rod, abs=tolerance)
+    assert result.mcnp_only_cm3 < 5e-3
+
+
+def test_compare_samples_scattered_solids_densely():
+    """Two small rods 3 m apart: the points go next to them, not in between."""
+    far = TWO_RODS.replace("4 c/z 1.05 0 0.5", "4 c/z 300 0 0.5")
+    rods = [models.cylinder(0, 0, 0, 5, 20), models.cylinder(3000, 0, 0, 5, 20)]
+    result = compare_component(
+        Key(1), rods, [1], Geometry(migjorn.parse(far)), n_points=20_000,
+        rng=np.random.default_rng(4),
+    )  # fmt: skip
+    rod = math.pi * 0.5**2 * 2
+    # One rod is missing in MCNP: measured precisely although the rods fill only
+    # 0.5 % of their common bounding box
+    assert result.mcnp_volume_std_cm3 < 0.05 * rod
+    tolerance = 4 * result.mcnp_volume_std_cm3
+    assert result.mcnp_volume_cm3 == pytest.approx(rod, abs=tolerance)
+
+
 def test_compare_reports_cad_that_cannot_be_meshed(monkeypatch):
     import radmodeling.compare
 
