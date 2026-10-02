@@ -136,7 +136,8 @@ registry yet) and untagged parts.
 ``--highlight problems.json`` writes the IDs per problem for the *Highlight problems*
 SpaceClaim tool.
 
-To get rid of the tori of pipe elbows, see ``radmod elbows`` in :doc:`commands`.
+To get rid of the tori of pipe elbows, use the *Replace elbows* SpaceClaim tool
+(:doc:`spaceclaim`).
 
 5. Export for the conversion
 ----------------------------

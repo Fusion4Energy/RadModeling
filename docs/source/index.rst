@@ -38,8 +38,8 @@ What it gives you
 * **CAD vs MCNP comparison without running MCNP.** RadModeling evaluates the MCNP
   cells itself, so it measures the volume of each component's cells, how much of it
   disagrees with the CAD, and plots slices with the CAD contours on top.
-* **Geometry tools.** Toroidal elbows to mitred cylinders, FMESH cards from boxes
-  drawn in CAD.
+* **Geometry tools.** FMESH cards from boxes drawn in CAD and, in SpaceClaim,
+  toroidal elbows to mitred cylinders.
 * **SpaceClaim tools published once.** They load the latest code from the
   radmodeling installation, so updating radmodeling updates them.
 

@@ -33,7 +33,8 @@ model.mcnp ──radmod compare───▶ CAD vs MCNP volumes, density correct
 * **CAD vs MCNP comparison without running MCNP**: the MCNP cells are evaluated
   directly to measure their volumes, their disagreement with the CAD, and to plot
   slices with the CAD on top.
-* **Geometry tools**: toroidal elbows to mitred cylinders, FMESH cards from boxes.
+* **Geometry tools**: FMESH cards from boxes; in SpaceClaim, toroidal elbows to mitred
+  cylinders.
 * **SpaceClaim tools published once** that always run the latest installed code.
 
 ## Installation

@@ -20,7 +20,7 @@ Layout
      slices.py         slices of a model and the planes of the atlas
      plot.py           slice and atlas rendering
      fmesh.py          FMESH cards from boxes
-     cad/              OpenCascade: STEP, meshes, sections, analysis, elbows
+     cad/              OpenCascade: STEP, meshes, sections, analysis
      mcnp/             MCNP geometry evaluation, cell tags, material assignment
      spaceclaim/       IronPython tools run by the SpaceClaim loaders
    src/radmod/         alias so that "python -m radmod" works like "radmod"

@@ -209,7 +209,7 @@ def check(
         issues["unconvertible"],
         "(splines, offsets...)",
     )
-    line("With tori", issues["torus"], "(consider 'radmod elbows')")
+    line("With tori", issues["torus"], "(elbows: the 'Replace elbows' SpaceClaim tool)")
     line("Invalid solids", issues["invalid"])
     line("Deleted instances", matching.missing)
     line(
@@ -723,48 +723,6 @@ def atlas(
 
 
 # --- geometry tools ------------------------------------------------------------------
-
-
-@app.command()
-def elbows(
-    step: Annotated[Path, typer.Argument(help="STEP model.")],
-    output: Annotated[Path, typer.Option("--output", "-o", help="STEP to write.")],
-    segments: Annotated[int, typer.Option(help="Segments per elbow.")] = 4,
-    max_angle: Annotated[
-        float | None,
-        typer.Option(help="Maximum turn per segment [deg]; adds segments if needed."),
-    ] = None,
-    preserve_volume: Annotated[
-        bool,
-        typer.Option(help="Scale the radii to keep the volume instead of the radii."),
-    ] = False,
-) -> None:
-    """Replace toroidal pipe elbows by mitred cylinder segments.
-
-    Names and tags are kept, so the result can go straight to 'check' and 'export'.
-    """
-    from radmodeling.cad.elbows import replace_elbows
-    from radmodeling.cad.step import Part, compound, read_step, write_step
-
-    parts = read_step(step)
-    result, count = [], 0
-    with console.status("Replacing elbows..."):
-        for part in parts:
-            shapes, records = replace_elbows(
-                part.shape, segments, max_angle, preserve_volume
-            )
-            if records:
-                count += len(records)
-                part = Part(part.name, part.path, compound(shapes), part.instance_name)
-                for r in records:
-                    change = r.new_volume_mm3 / r.original_volume_mm3 - 1
-                    console.print(
-                        f"{esc(part.name)}: {r.sweep_degrees:.4g} deg elbow -> "
-                        f"{r.segments} solids, volume {change:+.2%}"
-                    )
-            result.append(part)
-    write_step(result, output)
-    console.print(f"[green]{count} elbows replaced.[/] Written {esc(str(output))}")
 
 
 @app.command()

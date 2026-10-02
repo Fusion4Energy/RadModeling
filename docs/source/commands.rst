@@ -47,18 +47,6 @@ Workflow
 Geometry tools
 --------------
 
-``radmod elbows MODEL.step -o OUT.step``
-   Replaces every plain toroidal elbow (a solid made only of torus faces and two flat
-   end caps, hollow or not) by mitred cylinder segments: two half segments at the
-   ends and full ones in between, following the tangent polygon of the bend. The ends
-   stay perpendicular, so the result joins the adjacent straight pipes exactly.
-
-   The polygon is a bit longer than the arc, so the volume grows slightly (+1.3 % for
-   90° in 4 segments, +0.3 % in 8). By default the radii are kept, and the density
-   correction factor absorbs the difference; ``--preserve-volume`` scales the radii
-   instead. ``--segments`` sets the number of segments and ``--max-angle`` the
-   maximum turn per segment. Names and tags are kept.
-
 ``radmod fmesh BOXES.step --size 5``
    Prints an FMESH card for each box of the STEP file. Boxes can have any
    orientation: rotated boxes get a TR card. ``--bins 10,10,4`` sets the number of

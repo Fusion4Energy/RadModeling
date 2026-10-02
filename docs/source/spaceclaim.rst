@@ -73,6 +73,27 @@ Tools
    Colours in red the components listed in the JSON written by
    ``radmod check --highlight``.
 
+**Replace elbows**
+   Select a torus face of each pipe bend and run it: the bend is replaced by mitred
+   cylinder segments. The bend may be a body of its own or part of a longer pipe; the
+   inner torus of a hollow pipe is found from the outer one. Each segment turns at
+   most 22.5° (at least 2 segments), the end ones are half segments perpendicular to
+   the pipe, so they join the straight parts exactly.
+
+   The segments follow the tangent polygon of the bend, so the volume grows slightly
+   (+1.3 % for 90° in 4 segments, +0.3 % in 8): the density correction factor absorbs
+   it. The result replaces the body with a merged body of the same name (so the same
+   tag), layer and colour in the same part, so linked instances change together; if
+   the pieces do not unite into one body, they are kept as separate bodies. The volume
+   is checked on the pieces before merging, because SpaceClaim measures the merged
+   body wrong (OCCT finds it valid and exact: ``radmod check`` measures it right). If
+   the pieces do not have the expected volumes, for instance because other geometry of
+   the body falls next to the bend, the body is left unchanged and the pieces are left
+   as *RadModeling check* bodies to look at.
+
+   Look at the result: the corners stick out a little beyond the original bend and
+   may touch neighbouring parts.
+
 **Load points**
    Draws the points of a CSV file (x, y, z in cm) as small spheres, for instance the
    lost particles found by `F4Enix <https://github.com/Fusion4Energy/F4Enix>`_.
