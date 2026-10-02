@@ -782,28 +782,32 @@ def fmesh(
 ) -> None:
     """Print FMESH cards for the boxes of a STEP file (any orientation)."""
     from radmodeling.cad.step import read_step
-    from radmodeling.fmesh import box_from_solid, fmesh_card
+    from radmodeling.fmesh import box_from_solid, comment_line, fmesh_card
 
     if (size is None) == (bins is None):
         _fail("give either --size or --bins")
     counts = _ids(bins)
     if counts is not None and len(counts) != 3:
         _fail("--bins needs three values")
+    # The cards go to stdout, ready to redirect into an input; messages to stderr
+    messages = Console(stderr=True)
     number, tr = tally, transform
     for part in read_step(step):
         for solid in part.solids:
             try:
                 box = box_from_solid(solid)
             except ValueError as exc:
-                console.print(f"[yellow]Skipping {esc(part.name)}: {esc(str(exc))}[/]")
+                messages.print(f"[yellow]Skipping {esc(part.name)}: {esc(str(exc))}[/]")
                 continue
-            print(f"c {part.name}")
-            print(
-                fmesh_card(
+            try:
+                card = fmesh_card(
                     box, number, particle, size, tuple(counts) if counts else None, tr
-                ),
-                end="",
-            )
+                )
+            except ValueError as exc:
+                messages.print(f"[bold red]Error:[/] {esc(str(exc))}")
+                raise typer.Exit(1) from None
+            print(comment_line(part.name))
+            print(card, end="")
             number += 10
             tr += 0 if box.axis_aligned else 1
 

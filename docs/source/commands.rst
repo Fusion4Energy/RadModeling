@@ -63,7 +63,8 @@ Geometry tools
    Prints an FMESH card for each box of the STEP file. Boxes can have any
    orientation: rotated boxes get a TR card. ``--bins 10,10,4`` sets the number of
    voxels instead of their size; ``--tally`` and ``--transform`` set the first tally
-   and TR numbers.
+   and TR numbers. Solids that are not boxes are skipped with a warning on stderr, so
+   ``> meshes.i`` collects only the cards.
 
 SpaceClaim
 ----------

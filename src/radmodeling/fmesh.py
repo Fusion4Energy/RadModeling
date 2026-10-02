@@ -7,6 +7,7 @@ box faces define the mesh. Rotated boxes get a TR card for the mesh.
 from __future__ import annotations
 
 import math
+import unicodedata
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -16,9 +17,11 @@ from OCP.GeomAbs import GeomAbs_SurfaceType as ST
 from OCP.TopAbs import TopAbs_VERTEX
 from OCP.TopoDS import TopoDS, TopoDS_Solid
 
-from radmodeling.cad.occ import explore, faces
+from radmodeling.cad.occ import explore, faces, volume_mm3
 
 MM_PER_CM = 10.0
+MAX_TRANSFORM = 999
+LINE_LENGTH = 80  # MCNP 6.1 and older; 6.2 allows 128
 
 
 @dataclass
@@ -35,7 +38,11 @@ class MeshBox:
 
 
 def box_from_solid(solid: TopoDS_Solid, tolerance: float = 1e-6) -> MeshBox:
-    """Recognise a box: six planar faces with three mutually orthogonal normals."""
+    """Recognise a box: planar faces in three orthogonal directions, filling the box.
+
+    Faces may be split (imprints); the volume check rejects any other shape with the
+    same face directions (L-shapes, steps).
+    """
     normals = []
     for face in faces(solid):
         surface = BRepAdaptor_Surface(face)
@@ -44,10 +51,12 @@ def box_from_solid(solid: TopoDS_Solid, tolerance: float = 1e-6) -> MeshBox:
         normal = np.array(surface.Plane().Axis().Direction().Coord())
         if not any(abs(abs(normal @ n) - 1) < tolerance for n in normals):
             normals.append(normal)
-    if len(normals) != 3 or len(faces(solid)) != 6:
-        raise ValueError("The solid is not a box: it needs 6 faces in 3 directions")
+    if len(normals) != 3:
+        raise ValueError("The solid is not a box: its faces need 3 directions")
 
     normals = np.array(normals)
+    if not np.allclose(normals @ normals.T, np.eye(3), atol=1e-6):
+        raise ValueError("The solid is not a box: its faces are not orthogonal")
     # Deterministic right-handed frame: k closest to z, i closest to x, j = k x i
     k_index = int(np.argmax(np.abs(normals[:, 2])))
     k_axis = normals[k_index] * np.sign(normals[k_index, 2] or 1.0)
@@ -56,14 +65,20 @@ def box_from_solid(solid: TopoDS_Solid, tolerance: float = 1e-6) -> MeshBox:
     i_axis = i_axis * np.sign(i_axis[0] or 1.0)
     j_axis = np.cross(k_axis, i_axis)
     axes = np.array([i_axis, j_axis, k_axis])
-    if not np.allclose(axes @ axes.T, np.eye(3), atol=1e-6):
-        raise ValueError("The solid is not a box: its faces are not orthogonal")
 
     vertices = np.array([_vertex_point(v) for v in explore(solid, TopAbs_VERTEX)])
     vertices /= MM_PER_CM
     projected = vertices @ axes.T
     low, high = projected.min(axis=0), projected.max(axis=0)
-    return MeshBox(low @ axes, axes, high - low)
+    box = MeshBox(low @ axes, axes, high - low)
+    box_volume = float(np.prod(box.lengths))
+    solid_volume = volume_mm3(solid) / MM_PER_CM**3
+    if abs(solid_volume - box_volume) > 1e-4 * box_volume:
+        raise ValueError(
+            f"The solid is not a box: {solid_volume:.6g} cm3 instead of "
+            f"{box_volume:.6g} cm3"
+        )
+    return box
 
 
 def _vertex_point(vertex) -> tuple[float, float, float]:
@@ -88,6 +103,8 @@ def fmesh_card(
     """
     if tally % 10 != 4:
         raise ValueError("FMESH tally numbers must end in 4")
+    if not box.axis_aligned and not 1 <= transform <= MAX_TRANSFORM:
+        raise ValueError(f"TR numbers go from 1 to {MAX_TRANSFORM}, not {transform}")
     if bins is None:
         if size is None:
             raise ValueError("Give the voxel size or the number of bins")
@@ -111,3 +128,9 @@ def fmesh_card(
         for row in box.axes:
             lines.append("     " + " ".join(f"{v + 0.0:.9g}" for v in row))
     return "\n".join(lines) + "\n"
+
+
+def comment_line(text: str) -> str:
+    """MCNP comment card: ASCII only (accents dropped), within the line length."""
+    ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return f"c {' '.join(ascii_text.split())}"[:LINE_LENGTH].rstrip()
