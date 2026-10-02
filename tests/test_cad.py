@@ -6,7 +6,7 @@ import pytest
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeTorus
 
 from radmodeling.cad.analysis import analyse
-from radmodeling.cad.mesh import LineFrame, inside_on_lines, triangulate
+from radmodeling.cad.mesh import LineFrame, TriMesh, inside_on_lines, triangulate
 from radmodeling.cad.occ import GeometryMap, bounding_box, volume_mm3
 from radmodeling.cad.section import section_polylines
 from radmodeling.cad.step import Part, read_step, write_step
@@ -106,6 +106,20 @@ def test_classification_in_rotated_frame_is_exact_for_a_box():
     t = np.array([[-1.0, 0.5, 9.5, 11.0], [5.0, 5.0, 5.0, 5.0]])
     inside = inside_on_lines(mesh, frame, uv, t)
     assert inside.tolist() == [[False, True, True, False], [False] * 4]
+
+
+def test_lines_near_a_solid_that_miss_it():
+    """A line inside the box of a triangle but outside the triangle: no crossings."""
+    tetrahedron = TriMesh(
+        np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]], dtype=float),
+        np.array([[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]]),
+    )
+    frame = LineFrame(np.zeros(3), np.eye(3))
+    t = np.array([[-1.0, 0.1, 0.5, 2.0]])
+    inside = inside_on_lines(tetrahedron, frame, np.array([[0.9, 0.9]]), t)
+    assert not inside.any()
+    inside = inside_on_lines(tetrahedron, frame, np.array([[0.2, 0.2]]), t)
+    assert inside.tolist() == [[False, True, True, False]]
 
 
 def test_section_of_block():

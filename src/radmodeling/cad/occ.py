@@ -50,6 +50,12 @@ def volume_mm3(shape: TopoDS_Shape) -> float:
     return props.Mass()
 
 
+def area_mm2(shape: TopoDS_Shape) -> float:
+    props = GProp_GProps()
+    BRepGProp.SurfaceProperties_s(shape, props)
+    return props.Mass()
+
+
 def volume_and_centroid(shape: TopoDS_Shape) -> tuple[float, tuple[float, ...]]:
     """Volume and centre of mass of a shape, in model units."""
     props = GProp_GProps()

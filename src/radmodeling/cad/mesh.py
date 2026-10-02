@@ -18,8 +18,13 @@ from OCP.TopAbs import TopAbs_REVERSED
 from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS_Shape
 
-from radmodeling.cad.occ import bounding_box, faces
+from radmodeling.cad.occ import area_mm2, bounding_box, faces, volume_mm3
 
+# Largest relative difference between the volume of a mesh and the exact volume.
+# Meshes with the default deflection are typically within 1e-4.
+MESH_VOLUME_TOLERANCE = 1e-3
+# Same for the area of every face, looser as small curved faces have few triangles
+FACE_AREA_TOLERANCE = 1e-2
 # Memory budget (number of line-triangle pairs) per vectorised chunk
 _CHUNK_PAIRS = 4_000_000
 
@@ -44,19 +49,46 @@ def triangulate(
     linear_deflection: float | None = None,
     angular_deflection: float = 0.1,
 ) -> TriMesh:
-    """Tessellate a shape. The default deflection is 1e-4 of the bounding diagonal."""
+    """Tessellate a shape. The default deflection is 1e-4 of the bounding diagonal.
+
+    The mesh is checked against the exact geometry: the area of every face and the
+    volume. BRepMesh can fail on faces thinner than the deflection (slivers between
+    nearly tangent surfaces), or worse, mesh them wrongly without complaining, and
+    then points are misclassified. The deflection is refined up to 100 times until
+    the mesh is right.
+    """
     if linear_deflection is None:
         box = np.array(bounding_box(shape))
         linear_deflection = max(float(np.linalg.norm(box[3:] - box[:3])) * 1e-4, 1e-6)
-    BRepTools.Clean_s(shape)
-    BRepMesh_IncrementalMesh(shape, linear_deflection, False, angular_deflection, True)
+    exact = volume_mm3(shape)
+    problem = ""
+    for refinement in (1, 10, 100):
+        deflection = linear_deflection / refinement
+        BRepTools.Clean_s(shape)
+        BRepMesh_IncrementalMesh(shape, deflection, False, angular_deflection, True)
+        try:
+            mesh = _collect_mesh(shape, deflection)
+        except ValueError as exc:
+            problem = str(exc)
+            continue
+        if exact <= 0 or abs(mesh.volume / exact - 1) <= MESH_VOLUME_TOLERANCE:
+            return mesh
+        problem = f"mesh volume {mesh.volume / exact - 1:+.3%} off the exact volume"
+    raise ValueError(f"{problem}, even with a deflection of {deflection:.3g} mm")
 
+
+def _collect_mesh(shape: TopoDS_Shape, deflection: float) -> TriMesh:
+    """The triangulations of the faces of a meshed shape as a single mesh.
+
+    Raises ValueError if a face has no triangulation or a wrong one: its area is off
+    by more than the tolerance, which normal chord errors never reach.
+    """
     vertices, triangles, offset = [], [], 0
     for face in faces(shape):
         location = TopLoc_Location()
         triangulation = BRep_Tool.Triangulation_s(face, location)
         if triangulation is None:
-            raise ValueError("A face could not be tessellated")
+            raise ValueError("a face could not be tessellated")
         transform = location.Transformation()
         nodes = np.array(
             [
@@ -75,12 +107,25 @@ def triangulate(
         )
         if face.Orientation() == TopAbs_REVERSED:
             tris = tris[:, ::-1]
+        area = _area(nodes, tris)
+        exact = area_mm2(face)
+        if abs(area - exact) > FACE_AREA_TOLERANCE * exact + deflection**2:
+            raise ValueError(
+                f"a face of {exact:.4g} mm2 was meshed with {area:.4g} mm2"
+            )
         vertices.append(nodes)
         triangles.append(tris + offset)
         offset += len(nodes)
     if not vertices:
         return TriMesh(np.zeros((0, 3)), np.zeros((0, 3), dtype=int))
     return TriMesh(np.vstack(vertices), np.vstack(triangles))
+
+
+def _area(nodes: np.ndarray, triangles: np.ndarray) -> float:
+    if len(triangles) == 0:
+        return 0.0
+    a, b, c = (nodes[triangles[:, i]] for i in range(3))
+    return float(np.linalg.norm(np.cross(b - a, c - a), axis=1).sum() / 2)
 
 
 @dataclass(frozen=True)
@@ -163,6 +208,8 @@ def inside_on_lines(
         return inside
     hit_lines_arr = np.concatenate(hit_lines)
     hit_t_arr = np.concatenate(hit_t)
+    if hit_t_arr.size == 0:  # candidate triangles, but no line crosses them
+        return inside
 
     # Count, for every point, the crossings of its line that lie below it. A single
     # sorted key (line index + normalised t) lets searchsorted do it for all lines.

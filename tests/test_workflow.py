@@ -409,6 +409,19 @@ def test_compare_component(radius, matches):
     assert not result.touches_sampling_box
 
 
+def test_compare_reports_cad_that_cannot_be_meshed(monkeypatch):
+    import radmodeling.compare
+
+    def fail(shape):
+        raise ValueError("a face could not be tessellated")
+
+    monkeypatch.setattr(radmodeling.compare, "triangulate", fail)
+    geometry = Geometry(migjorn.parse(models.mcnp_text()))
+    result = compare_component(Key(3), [models.ball()], [3], geometry, n_points=100)
+    assert result.error == "CAD: a face could not be tessellated"
+    assert math.isnan(result.mcnp_volume_cm3)
+
+
 def test_compare_flags_cells_beyond_the_cad():
     text = models.mcnp_text().replace("11 s 5 5 10 2.5", "11 s 5 5 10 6")
     result = compare_component(

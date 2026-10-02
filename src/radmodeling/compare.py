@@ -58,7 +58,10 @@ def compare_component(
     rng: np.random.Generator | None = None,
 ) -> VolumeComparison:
     rng = rng or np.random.default_rng()
-    meshes = [triangulate(s) for s in solids]
+    try:
+        meshes = [triangulate(s) for s in solids]
+    except ValueError as exc:
+        return _failed(key, cells, float("nan"), f"CAD: {exc}")
     cad_volume = sum(m.volume for m in meshes) / 1000.0
 
     lo, hi = _union_bounds(solids)
@@ -85,18 +88,7 @@ def compare_component(
         for cell in cells:
             in_cell |= evaluator.cell(cell)
     except ValueError as exc:
-        nan = float("nan")
-        return VolumeComparison(
-            key=key,
-            cells=cells,
-            cad_volume_cm3=cad_volume,
-            mcnp_volume_cm3=nan,
-            mcnp_volume_std_cm3=nan,
-            cad_only_cm3=nan,
-            mcnp_only_cm3=nan,
-            touches_sampling_box=False,
-            error=str(exc),
-        )
+        return _failed(key, cells, cad_volume, str(exc))
     in_cell = in_cell.reshape(t.shape)
 
     cad_only = in_cad & ~in_cell
@@ -120,6 +112,23 @@ def compare_component(
         cad_only_cm3=float(cad_only.mean() * box_volume_cm3),
         mcnp_only_cm3=float(mcnp_only.mean() * box_volume_cm3),
         touches_sampling_box=bool(np.any(in_cell & on_faces)),
+    )
+
+
+def _failed(
+    key: Key, cells: list[int], cad_volume: float, error: str
+) -> VolumeComparison:
+    nan = float("nan")
+    return VolumeComparison(
+        key=key,
+        cells=cells,
+        cad_volume_cm3=cad_volume,
+        mcnp_volume_cm3=nan,
+        mcnp_volume_std_cm3=nan,
+        cad_only_cm3=nan,
+        mcnp_only_cm3=nan,
+        touches_sampling_box=False,
+        error=error,
     )
 
 

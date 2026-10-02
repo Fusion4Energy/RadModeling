@@ -31,6 +31,8 @@ keep all code in `radmodeling`.
 - CAD point classification: ray parity on BRepMesh triangulations, points grouped on
   parallel lines (`cad/mesh.py`, grid-accelerated). Do not use OCCT Booleans to
   verify geometry in tests: they are unreliable for near-tangent tori/cylinders.
+  `triangulate` checks every face area and the volume against BRepGProp and refines
+  the deflection: BRepMesh silently mis-meshes sliver faces (seen in real models).
 - MCNP inputs are parsed and edited with `migjorn` (lossless). `mcnp/geometry.py`
   adds the point classifier: surfaces, macrobodies, TR, complements, LIKE BUT, and
   conservative bounding boxes so cells/surfaces are only evaluated where needed.
