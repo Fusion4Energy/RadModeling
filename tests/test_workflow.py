@@ -347,7 +347,8 @@ def make_registry():
 
 
 def test_assign_materials(library_file):
-    model = migjorn.parse(models.mcnp_text())
+    # The input defines the steel card: only the tungsten one is missing
+    model = migjorn.parse(models.mcnp_text() + "m10 26000.31c 1\n")
     report = assign_materials(
         model, make_registry(), MaterialLibrary.load(library_file)
     )
@@ -358,9 +359,38 @@ def test_assign_materials(library_file):
     assert cell(model, 3).density == pytest.approx(-20)
     assert cell(model, 4).material == 0
     assert report.material_numbers == {"SS316L": 10, "Tungsten": 31}
-    assert report.cards_added == [10, 31]
-    assert model.material(31) is not None
+    assert report.missing_cards == [31]
+    assert model.material(31) is None  # material cards are never written
     assert cell(model, 6).material == 0  # untagged cells are left alone
+
+
+@pytest.mark.parametrize(
+    ("mcnp_volume", "std", "applied"),
+    [
+        (49.0, None, True),  # 2 %
+        (49.97, None, False),  # 0.06 %, below the 0.1 % minimum
+        (49.0, 0.4, False),  # 2 % but within three standard deviations (2.4 %)
+        (49.0, 0.1, True),  # 2 % and well beyond its uncertainty
+    ],
+)
+def test_negligible_dcf_are_not_applied(library_file, mcnp_volume, std, applied):
+    registry = make_registry()
+    ball = registry[3, 1]
+    ball.mcnp_volume_cm3, ball.mcnp_volume_std_cm3 = mcnp_volume, std
+    model = migjorn.parse(models.mcnp_text())
+    report = assign_materials(model, registry, MaterialLibrary.load(library_file))
+    dcf = 50 / mcnp_volume if applied else 1
+    assert cell(model, 3).density == pytest.approx(-20 * dcf, rel=1e-5)
+    assert ((3, 1) in report.dcf_applied) == applied
+    assert ((3, 1) in report.dcf_negligible) != applied
+    assert report.dcf_applied[:1] == [(2, 1)]  # the pipe: 4.7 %
+
+
+def test_material_library_rejects_unknown_keys(tmp_path):
+    path = tmp_path / "library.toml"
+    path.write_text("[SS316L]\ndensty = 7.93\n")  # typo
+    with pytest.raises(ValueError, match="unknown keys \\['densty'\\]"):
+        MaterialLibrary.load(path)
 
 
 def test_assign_materials_needs_tags(library_file):
@@ -515,7 +545,9 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
 
     output = run("compare", exported, mcnp, "--seed", "1", "--points", "20000")
     assert "4 instances agree" in output
-    assert Registry.load(registry)[3, 1].dcf == pytest.approx(1, abs=0.01)
+    ball = Registry.load(registry)[3, 1]
+    assert ball.dcf == pytest.approx(1, abs=0.01)
+    assert ball.mcnp_volume_std_cm3 is not None
 
     run("materials", mcnp, "-r", registry, "-l", library_file)
     result = migjorn.parse(mcnp.with_name("model_materials.mcnp").read_text())

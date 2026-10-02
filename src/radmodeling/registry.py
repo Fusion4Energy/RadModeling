@@ -93,6 +93,7 @@ class Component:
     simplified_solids: int | None = None
     volume_diff_pct: float | None = None  # computed
     mcnp_volume_cm3: float | None = None
+    mcnp_volume_std_cm3: float | None = None  # statistical uncertainty (1 sigma)
     dcf: float | None = None  # computed
     status: str = ""
     comment: str = ""

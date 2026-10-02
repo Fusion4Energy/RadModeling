@@ -298,8 +298,16 @@ def materials(
         bool,
         typer.Option(help="Apply density correction factors from the MCNP volumes."),
     ] = True,
+    dcf_min: Annotated[
+        float,
+        typer.Option(help="Smallest density correction applied [%]."),
+    ] = 0.1,
 ) -> None:
-    """Assign materials and densities (with DCF) to the tagged cells."""
+    """Assign materials and densities (with DCF) to the tagged cells.
+
+    Density correction factors closer to 1 than --dcf-min, or than three times their
+    own uncertainty, are not applied: they cannot be told apart from 1.
+    """
     from radmodeling.mcnp.geometry import read_model
     from radmodeling.mcnp.materials import (
         AssignmentError,
@@ -318,6 +326,7 @@ def materials(
             Registry.load(registry),
             MaterialLibrary.load(library),
             use_dcf=dcf,
+            dcf_min=dcf_min / 100,
         )
     except AssignmentError as exc:
         _fail(str(exc))
@@ -335,15 +344,15 @@ def materials(
         )
     console.print(table)
     console.print(f"Void components: {report.void_components}")
-    if report.cards_already_defined:
+    if report.missing_cards:
+        names = {number: name for name, number in report.material_numbers.items()}
+        missing = ", ".join(f"m{n} ({names[n]})" for n in report.missing_cards)
+        console.print(f"[yellow]Material cards to add to the input:[/] {esc(missing)}")
+    if dcf:
         console.print(
-            "[yellow]Material cards already in the input were kept:[/] "
-            f"{report.cards_already_defined}"
-        )
-    if report.without_composition:
-        console.print(
-            "[yellow]No composition in the library, add their cards by hand:[/] "
-            f"{esc(str(report.without_composition))}"
+            f"Density correction factors applied: {len(report.dcf_applied)}; "
+            f"negligible, left at 1: {len(report.dcf_negligible)} (closer to 1 than "
+            f"{dcf_min:g} % or three times their uncertainty)"
         )
     for key, value in report.dcf_out_of_range:
         console.print(f"[yellow]Component {key}: unusual DCF {value:.3f}[/]")
@@ -473,6 +482,7 @@ def compare(
         for r in results:
             if r.key in reg and not r.error:
                 reg[r.key].mcnp_volume_cm3 = r.mcnp_volume_cm3
+                reg[r.key].mcnp_volume_std_cm3 = r.mcnp_volume_std_cm3
         reg.save(registry)
         console.print(f"MCNP volumes saved in {esc(str(registry))} (used for the DCF).")
     if report:

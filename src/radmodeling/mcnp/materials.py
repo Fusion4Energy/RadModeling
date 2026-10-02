@@ -6,13 +6,10 @@ The material library is a TOML file with one table per material::
     number = 2              # MCNP material number (optional, else auto-assigned)
     density = 7.93          # g/cm3, default for the components made of it
     aliases = ["316L", "AISI 316L"]
-    composition = '''
-        26000.31c -0.6532
-        24000.31c -0.1700
-    '''
 
 Material names in the registry are matched case-insensitively against the table names
-and their aliases.
+and their aliases. Only the cells are edited: the material cards (compositions) are
+defined elsewhere, and the material numbers used without a card are reported.
 """
 
 from __future__ import annotations
@@ -24,14 +21,18 @@ from dataclasses import dataclass, field
 import migjorn
 
 from radmodeling.mcnp.tags import cells_by_instance
-from radmodeling.registry import Key, Registry
+from radmodeling.registry import Component, Key, Registry
 
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # pragma: no cover
     import tomli as tomllib
 
-MAX_LINE = 128  # MCNP6 line length limit
+# Density correction factors closer to 1 than this, or than DCF_SIGMAS times their
+# uncertainty, are not applied: they cannot be told apart from 1, and applying them
+# would only change densities in their last digits at every new 'compare'
+DCF_MIN = 1e-3
+DCF_SIGMAS = 3.0
 
 
 @dataclass
@@ -40,7 +41,6 @@ class Material:
     number: int | None = None
     density: float | None = None
     aliases: list[str] = field(default_factory=list)
-    composition: str = ""
 
 
 class MaterialLibrary:
@@ -62,7 +62,7 @@ class MaterialLibrary:
         for name, values in data.items():
             if not isinstance(values, dict):
                 raise ValueError(f"{path}: {name!r} must be a table")
-            unknown = set(values) - {"number", "density", "aliases", "composition"}
+            unknown = set(values) - {"number", "density", "aliases"}
             if unknown:
                 raise ValueError(f"{path}: unknown keys {sorted(unknown)} in {name!r}")
             materials.append(Material(name=name, **values))
@@ -81,10 +81,10 @@ class AssignmentReport:
     material_numbers: dict[str, int] = field(default_factory=dict)
     cells_per_material: dict[str, int] = field(default_factory=dict)
     mass_per_material_g: dict[str, float] = field(default_factory=dict)
-    cards_added: list[int] = field(default_factory=list)
-    cards_already_defined: list[int] = field(default_factory=list)
-    without_composition: list[str] = field(default_factory=list)
+    missing_cards: list[int] = field(default_factory=list)  # used, not in the input
     dcf_out_of_range: list[tuple[Key, float]] = field(default_factory=list)
+    dcf_applied: list[Key] = field(default_factory=list)
+    dcf_negligible: list[Key] = field(default_factory=list)
     void_components: int = 0
 
 
@@ -98,6 +98,7 @@ def assign_materials(
     library: MaterialLibrary,
     use_dcf: bool = True,
     dcf_range: tuple[float, float] = (0.8, 1.25),
+    dcf_min: float = DCF_MIN,
 ) -> AssignmentReport:
     """Write materials and densities into the tagged cells of a model.
 
@@ -165,6 +166,11 @@ def assign_materials(
             dcf = component.original_volume_cm3 / component.mcnp_volume_cm3
             if not dcf_range[0] <= dcf <= dcf_range[1]:
                 report.dcf_out_of_range.append((key, dcf))
+            if _negligible(dcf, component, dcf_min):
+                report.dcf_negligible.append(key)
+                dcf = 1.0
+            else:
+                report.dcf_applied.append(key)
 
         number = material_number(material)
         used[material.name] = material
@@ -189,21 +195,15 @@ def assign_materials(
     for material in sorted(used.values(), key=lambda m: m.number or 0):
         assert material.number is not None
         report.material_numbers[material.name] = material.number
-        if material.number in defined:
-            report.cards_already_defined.append(material.number)
-        elif material.composition.strip():
-            model.add_material(_material_card(material))
-            report.cards_added.append(material.number)
-        else:
-            report.without_composition.append(material.name)
+        if material.number not in defined:
+            report.missing_cards.append(material.number)
     return report
 
 
-def _material_card(material: Material) -> str:
-    assert material.number is not None
-    lines = [f"m{material.number}  $ {material.name}"[:MAX_LINE]]
-    for line in material.composition.strip().splitlines():
-        line = line.strip()
-        if line:
-            lines.append(f"      {line}")
-    return "\n".join(lines)
+def _negligible(dcf: float, component: Component, dcf_min: float) -> bool:
+    """Whether a density correction factor cannot be told apart from 1."""
+    deviation = abs(dcf - 1)
+    if deviation < dcf_min:
+        return True
+    std, volume = component.mcnp_volume_std_cm3, component.mcnp_volume_cm3
+    return bool(std and volume and deviation < DCF_SIGMAS * dcf * std / volume)

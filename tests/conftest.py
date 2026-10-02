@@ -24,14 +24,9 @@ def library_file(tmp_path: Path) -> Path:
 number = 10
 density = 7.93
 aliases = ["316L"]
-composition = '''
-26000.31c -0.7
-24000.31c -0.3
-'''
 
 [Tungsten]
 density = 19.3
-composition = "74000.31c 1"
 
 [Inconel]
 number = 30

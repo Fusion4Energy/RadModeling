@@ -31,6 +31,8 @@ Workflow
 
 ``radmod materials MODEL.mcnp -r REGISTRY -l LIBRARY.toml``
    Materials, densities and density correction factors in the tagged cells.
+   Corrections closer to 1 than ``--dcf-min`` (0.1 %) or than three times their
+   uncertainty are not applied.
 
 ``radmod slice MODEL.mcnp -o SLICE.png``
    Slice plot. ``--normal`` is ``x``, ``y``, ``z`` or any vector such as ``1,1,0``;

@@ -68,8 +68,9 @@ the same component can have different materials.
      - Written by ``check`` and ``export``.
    * - ``volume_diff_pct``
      - Simplified vs original volume. Computed.
-   * - ``mcnp_volume_cm3``
-     - Volume of the component's MCNP cells, written by ``compare``.
+   * - ``mcnp_volume_cm3``, ``mcnp_volume_std_cm3``
+     - Volume of the component's MCNP cells and its statistical uncertainty
+       (one standard deviation), written by ``compare``.
    * - ``dcf``
      - Density correction factor, original volume / MCNP volume. Computed.
    * - ``status``
@@ -200,10 +201,20 @@ discrepancy, and cell tags of instances that are not in the STEP file are listed
    radmod materials model.mcnp -r machine_registry.csv -l materials.toml
 
 Writes ``model_materials.mcnp`` with the material number and density of every
-tagged cell (density × DCF, as mass density) and the material cards from the
-library. Every problem (components without material, unknown materials, tags of
+tagged cell (density × DCF, as mass density). Every problem (components without material, unknown materials, tags of
 components not in the registry...) is reported at once so the registry can be fixed
-in one go. Use ``--no-dcf`` to ignore the density correction factors.
+in one go.
+
+Density correction factors that cannot be told apart from 1 are not applied: those
+closer to 1 than ``--dcf-min`` (0.1 % by default) and those within three standard
+deviations of 1, from the uncertainty of the MCNP volume. Such corrections are
+below the accuracy of the comparison, and applying them would only change the
+densities in their last digits at every new ``compare``. Larger corrections are
+always applied, however small: the volume removed when simplifying a component is
+real missing mass, usually in the same direction for all components, and it adds
+up. The registry still shows every ``dcf``, and the command reports how many were
+applied and how many left at 1. Use ``--no-dcf`` to ignore the density correction
+factors altogether.
 
 The material library is a TOML file:
 
@@ -213,15 +224,11 @@ The material library is a TOML file:
    number = 10            # MCNP material number, auto-assigned when missing
    density = 7.93         # g/cm3, default for the components made of it
    aliases = ["316L", "AISI 316L"]
-   composition = """
-   26000.31c -0.655
-   24000.31c -0.170
-   28000.31c -0.120
-   """
 
-Material cards already present in the input are kept. Materials without a
-``composition`` are assigned but their cards must be added by hand (the command lists
-them).
+``materials`` only edits the cells: the material cards themselves (compositions,
+libraries) belong to the material definition process, not to the geometry, and are
+added to the input separately. The command lists the material numbers it used that
+have no card in the input yet.
 
 8. Look at it
 -------------

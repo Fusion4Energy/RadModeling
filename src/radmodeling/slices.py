@@ -80,7 +80,7 @@ def load_scene(
         counts[cell.material] = counts.get(cell.material, 0) + 1
     names = {}
     for card in geometry.model.materials():
-        # 'materials' writes the material name as a comment on the card
+        # Material cards often carry the material name as a comment
         first_line = card.text.splitlines()[0]
         if card.id is not None and "$" in first_line:
             label = first_line.split("$", 1)[1].strip()
