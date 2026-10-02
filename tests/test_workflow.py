@@ -11,7 +11,6 @@ from OCP.gp import gp_Pnt
 from radmodeling import workflow
 from radmodeling.cad.occ import GeometryMap, bounding_box, volume_and_centroid
 from radmodeling.cad.step import Part, read_step, write_step
-from radmodeling.cellmap import CellMap
 from radmodeling.compare import compare_component
 from radmodeling.mcnp.geometry import Geometry
 from radmodeling.mcnp.materials import (
@@ -19,7 +18,16 @@ from radmodeling.mcnp.materials import (
     MaterialLibrary,
     assign_materials,
 )
-from radmodeling.registry import Component, Key, Registry, find_id, tag_name
+from radmodeling.mcnp.tags import cell_key, cells_by_instance
+from radmodeling.registry import (
+    Component,
+    Key,
+    Registry,
+    find_id,
+    find_key,
+    key_name,
+    tag_name,
+)
 
 
 def test_tags():
@@ -27,6 +35,11 @@ def test_tags():
     assert find_id(["Root [rm1]", "Body"]) == 1
     assert find_id(["Root [rm1]", "Child [rm2]", "Solid1"]) == 2
     assert find_id(["Root", "x"]) is None
+    # The STEP written by 'export' tags each solid with its instance too
+    assert key_name("Pump [rm3]", Key(7, 2)) == "[rm7.2] Pump"
+    assert find_id(["[rm7.2] Pump #1"]) == 7
+    assert find_key("/export/[rm7.2] Pump #11") == (7, 2)
+    assert find_key("Pump [rm7]") is None
 
 
 def test_registry_reads_excel_european_csv(tmp_path):
@@ -104,20 +117,18 @@ def test_init_check_export(tmp_path, cad_model):
 
     registry = Registry.load(registry_csv)
     output = tmp_path / "export.step"
-    result = workflow.export(simplified, registry, output, tmp_path / "c.csv")
-    cell_map = result.cell_map
+    result = workflow.export(simplified, registry, output)
     assert result.added == result.untagged == [(5, 1)]
     assert registry[5, 1].status == "new"
-    assert [k.id for k in cell_map.keys] == [1, 2, 3, 4, 4, 5]
-    assert CellMap.load(tmp_path / "c.csv").keys == cell_map.keys
+    assert [k.id for k in result.keys] == [1, 2, 3, 4, 4, 5]
     # The exported file is flat and in cell order
     assert [p.name for p in read_step(output)] == [
-        "Block [rm1]",
-        "Pipe [rm2]",
-        "Ball [rm3]",
-        "Bolts #1 [rm4]",
-        "Bolts #2 [rm4]",
-        "Shield [rm5]",
+        "[rm1.1] Block",
+        "[rm2.1] Pipe",
+        "[rm3.1] Ball",
+        "[rm4.1] Bolts #1",
+        "[rm4.1] Bolts #2",
+        "[rm5.1] Shield",
     ]
 
 
@@ -183,17 +194,16 @@ def test_instances_are_simplified_once_and_tracked_one_by_one(tmp_path):
 
     registry = Registry.load(registry_csv)
     output = tmp_path / "export.step"
-    result = workflow.export(simplified, registry, output, tmp_path / "c.csv")
-    cell_map = result.cell_map
+    result = workflow.export(simplified, registry, output)
     assert result.added == [(2, 7)]
     assert result.untagged == []
     assert registry[2, 7].status == "new"
     assert registry[2, 7].material == "SS316L"
-    assert [str(k) for k in cell_map.keys] == [
+    assert [str(k) for k in result.keys] == [
         "1.1", "2.1", "2.3", "2.4", "2.5", "2.6", "2.7"
     ]  # fmt: skip
     # Each exported solid is the instance its registry row describes
-    for key, solids in workflow.exported_solids(output, cell_map).items():
+    for key, solids in workflow.exported_solids(output).items():
         centre = np.array(volume_and_centroid(solids[0])[1]) / 10
         assert centre == pytest.approx(registry[key].centre_cm, abs=1e-6)
 
@@ -235,7 +245,7 @@ def test_new_tags_become_new_components(tmp_path, cad_model):
     for run in range(2):
         registry = Registry.load(registry_csv)
         output = tmp_path / "export.step"
-        result = workflow.export(simplified, registry, output, tmp_path / "c.csv")
+        result = workflow.export(simplified, registry, output)
         registry.save(registry_csv)
         assert result.added == ([(9, 1), (9, 2)] if run == 0 else [])
         assert result.untagged == []
@@ -292,8 +302,29 @@ def cell(model: migjorn.Model, number: int) -> migjorn.Cell:
     return result
 
 
-def cell_map(ids: list[int]) -> CellMap:
-    return CellMap([Key(i) for i in ids])
+def test_cells_are_found_by_the_tags_in_their_comments():
+    model = migjorn.parse(models.mcnp_text())
+    assert cells_by_instance(model) == {
+        (1, 1): [1], (2, 1): [2], (3, 1): [3], (4, 1): [4, 5]
+    }  # fmt: skip
+    # The tags survive renumbering, unlike the cell order
+    model.renumber_cells({1: 105, 2: 104, 3: 103, 4: 102, 5: 101})
+    assert cells_by_instance(model) == {
+        (1, 1): [105], (2, 1): [104], (3, 1): [103], (4, 1): [102, 101]
+    }  # fmt: skip
+
+
+def test_cell_tags_are_read_from_dollar_comments_only():
+    text = models.mcnp_text().replace("2 0  -8", "c [rm7.1] a comment line\n2 0  -8")
+    model = migjorn.parse(text)
+    cell2 = cell(model, 2)
+    assert cell2.text.startswith("c [rm7.1]")  # the comment belongs to the card
+    assert cell_key(cell2) == (2, 1)
+    # GEOUNED writes the material first; a component tag without instance is no key
+    text = models.mcnp_text().replace(
+        "$/export/[rm3.1]", "$SS316\n" + " " * 11 + "$/x/[rm3]/[rm9.2]"
+    )
+    assert cell_key(cell(migjorn.parse(text), 3)) == (9, 2)
 
 
 def make_registry():
@@ -318,10 +349,7 @@ def make_registry():
 def test_assign_materials(library_file):
     model = migjorn.parse(models.mcnp_text())
     report = assign_materials(
-        model,
-        make_registry(),
-        cell_map([1, 2, 3, 4, 4]),
-        MaterialLibrary.load(library_file),
+        model, make_registry(), MaterialLibrary.load(library_file)
     )
     assert cell(model, 1).material == 10
     assert cell(model, 1).density == pytest.approx(-7.93)
@@ -331,17 +359,17 @@ def test_assign_materials(library_file):
     assert cell(model, 4).material == 0
     assert report.material_numbers == {"SS316L": 10, "Tungsten": 31}
     assert report.cards_added == [10, 31]
-    assert "$ rm:2.1 Pipe DCF=1.0472" in cell(model, 2).text
     assert model.material(31) is not None
+    assert cell(model, 6).material == 0  # untagged cells are left alone
 
-    # Running it again does not duplicate the comments
-    assign_materials(
-        model,
-        make_registry(),
-        cell_map([1, 2, 3, 4, 4]),
-        MaterialLibrary.load(library_file),
-    )
-    assert cell(model, 2).text.count("rm:2") == 1
+
+def test_assign_materials_needs_tags(library_file):
+    with pytest.raises(AssignmentError, match="keeping the solid names"):
+        assign_materials(
+            migjorn.parse("t\n1 0 -1 imp:n=1 $/export/Block1\n\n1 so 1\n\nmode n\n"),
+            make_registry(),
+            MaterialLibrary.load(library_file),
+        )
 
 
 def test_assign_materials_reports_all_problems(library_file):
@@ -350,15 +378,16 @@ def test_assign_materials_reports_all_problems(library_file):
     registry[2, 1].material = "Unobtainium"
     with pytest.raises(AssignmentError) as error:
         assign_materials(
-            migjorn.parse(models.mcnp_text()),
+            migjorn.parse(  # 9 is not in the registry
+                models.mcnp_text(tags=["1.1", "2.1", "3.1", "4.1", "9.1"])
+            ),
             registry,
-            cell_map([1, 2, 3, 4, 4, 4, 4, 4, 4, 4]),  # more solids than cells
             MaterialLibrary.load(library_file),
         )
     message = str(error.value)
     assert "Component 1.1 (Block): no material" in message
     assert "Unobtainium" in message
-    assert "not found in the MCNP input" in message
+    assert "Component 9.1 (cells [5]) is not in the registry" in message
 
 
 @pytest.mark.parametrize(("radius", "matches"), [(2.5, True), (2.6, False)])
@@ -417,27 +446,19 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
 
     exported = tmp_path / "export.step"
     run("export", tagged, "-o", exported)
-    cells = tmp_path / "export_cells.csv"
     mcnp = tmp_path / "model.mcnp"
-    mcnp.write_text(models.mcnp_text())
+    # Renumbering the cells does not lose track of the components
+    model = migjorn.parse(models.mcnp_text())
+    model.offset_cells(100)
+    model.save(str(mcnp))
 
-    output = run(
-        "compare",
-        exported,
-        mcnp,
-        "-m",
-        cells,
-        "--seed",
-        "1",
-        "--points",
-        "20000",
-    )
+    output = run("compare", exported, mcnp, "--seed", "1", "--points", "20000")
     assert "4 instances agree" in output
     assert Registry.load(registry)[3, 1].dcf == pytest.approx(1, abs=0.01)
 
-    run("materials", mcnp, "-r", registry, "-m", cells, "-l", library_file)
+    run("materials", mcnp, "-r", registry, "-l", library_file)
     result = migjorn.parse(mcnp.with_name("model_materials.mcnp").read_text())
-    assert cell(result, 3).material == 31
+    assert cell(result, 103).material == 31
 
     png = tmp_path / "slice.png"
     output = run(
@@ -447,13 +468,12 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
         png,
         "--step",
         exported,
-        "-m",
-        cells,
         "--resolution",
         "200",
     )
     assert png.stat().st_size > 10_000
     assert "no cell" not in output
+    assert "CAD/MCNP mismatching pixels" in output
 
 
 def test_registry_is_found_only_when_unambiguous(tmp_path, monkeypatch):
@@ -485,12 +505,12 @@ def test_registry_is_found_only_when_unambiguous(tmp_path, monkeypatch):
     assert run("check", step, "-r", registry).exit_code == 0
 
     # --no-registry leaves the registry untouched
-    exported, cells = tmp_path / "export.step", tmp_path / "export_cells.csv"
+    exported = tmp_path / "export.step"
     assert run("export", step, "-r", registry, "-o", exported).exit_code == 0
     mcnp = tmp_path / "model.mcnp"
     mcnp.write_text(models.mcnp_text())
     before = registry.read_bytes()
-    args = ("compare", exported, mcnp, "-m", cells, "--points", "2000")
+    args = ("compare", exported, mcnp, "--points", "2000")
     result = run(*args, "--no-registry")
     assert result.exit_code == 0, result.output
     assert registry.read_bytes() == before

@@ -12,12 +12,12 @@ MCNP geometry obtained from them. It is a Python package with a command line too
                        simplify in SpaceClaim (or any CAD program)
                                       │
    simplified.step ──radmod check──▶ volume deviations, tori, splines, invalid solids
-                   ──radmod export─▶ for_conversion.step + cell map
+                   ──radmod export─▶ for_conversion.step
                                       │
                             GEOUNED (or another converter)
                                       │
-   model.mcnp ──radmod compare──▶ CAD vs MCNP volumes, density correction factors
-              ──radmod materials─▶ materials, densities and comments in the cells
+   model.mcnp ──radmod compare───▶ CAD vs MCNP volumes, density correction factors
+              ──radmod materials─▶ materials and densities in the cells
               ──radmod slice─────▶ slice plots with the CAD overlaid
 
 What it gives you

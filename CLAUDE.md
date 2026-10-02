@@ -20,7 +20,11 @@ keep all code in `radmodeling`.
 - The tag is on the part definition: instances of a part share it and stay linked
   (`write_step` keeps instancing; only `export` flattens). Registry rows are per
   instance, keyed `(id, instance)`; instances are matched by centre of mass
-  (`workflow.match_instances`). The cell map is positional: n-th solid = n-th cell.
+  (`workflow.match_instances`).
+- Cells are linked to registry rows by tags in their `$` comments, never by cell
+  number (`mcnp/tags.py`). `export` names each solid `[rmID.instance] Name` (tag first:
+  converters may cut or drop the end of names) and GEOUNED copies each solid's CAD
+  path into a `$/…/name` comment on its cell.
 - STEP I/O is direct OCP/XCAF (`cad/step.py`), not build123d: build123d mangles names.
   Non-ASCII names are written as `\X2\` escapes. `cad/occ.py` hides OCP 7.x/8.x API
   differences (`TopoDS.Solid` vs `Solid_s`, collections module, `Bnd_Box.Get`).

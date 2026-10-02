@@ -23,8 +23,8 @@ from dataclasses import dataclass, field
 
 import migjorn
 
-from radmodeling.cellmap import CellMap
-from radmodeling.registry import Component, Key, Registry
+from radmodeling.mcnp.tags import cells_by_instance
+from radmodeling.registry import Key, Registry
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -32,7 +32,6 @@ else:  # pragma: no cover
     import tomli as tomllib
 
 MAX_LINE = 128  # MCNP6 line length limit
-COMMENT_TAG = "rm:"
 
 
 @dataclass
@@ -96,23 +95,28 @@ class AssignmentError(ValueError):
 def assign_materials(
     model: migjorn.Model,
     registry: Registry,
-    cell_map: CellMap,
     library: MaterialLibrary,
-    first_cell: int = 1,
     use_dcf: bool = True,
     dcf_range: tuple[float, float] = (0.8, 1.25),
 ) -> AssignmentReport:
-    """Write materials, densities and component comments into the cells of a model.
+    """Write materials and densities into the tagged cells of a model.
 
-    Each instance of a component gets the material and density of its own row.
+    Each instance of a component gets the material and density of its own row. Its
+    cells are found by the ``[rmID.instance]`` tags in their comments (see
+    :mod:`radmodeling.mcnp.tags`).
 
-    Every problem found (missing cells, materials or densities) is collected and
-    raised together in a single :class:`AssignmentError`, so that the registry can be
-    fixed in one pass.
+    Every problem found (unknown components, missing materials or densities) is
+    collected and raised together in a single :class:`AssignmentError`, so that the
+    registry can be fixed in one pass.
     """
     report = AssignmentReport()
     errors: list[str] = []
-    cells_by_instance = cell_map.cells_by_instance(first_cell)
+    cells = cells_by_instance(model)
+    if not cells:
+        raise AssignmentError(
+            "no cell comment has an '[rmID.instance]' tag: convert the STEP file "
+            "written by 'radmod export' keeping the solid names as cell comments"
+        )
 
     # Material numbers: explicit ones first, then auto-assign the rest
     used_numbers = {m.number for m in library.materials if m.number is not None}
@@ -127,29 +131,21 @@ def assign_materials(
         return material.number
 
     used: dict[str, Material] = {}
-    for key, cells in sorted(cells_by_instance.items()):
+    for key, numbers in sorted(cells.items()):
         if key not in registry:
-            errors.append(f"Component {key} is not in the registry")
+            errors.append(f"Component {key} (cells {numbers}) is not in the registry")
             continue
         component = registry[key]
-        missing_cells = [n for n in cells if model.cell(n) is None]
-        if missing_cells:
-            errors.append(
-                f"Component {key}: cells {missing_cells} not found in the "
-                "MCNP input (is the first cell number right?)"
-            )
-            continue
 
         if not component.material.strip():
             errors.append(f"Component {key} ({component.name}): no material")
             continue
         if component.is_void:
             report.void_components += 1
-            for number in cells:
+            for number in numbers:
                 cell = model.cell(number)
                 assert cell is not None
                 cell.material = 0
-                _add_comment(cell, component, None)
             continue
 
         material = library.get(component.material)
@@ -172,15 +168,14 @@ def assign_materials(
 
         number = material_number(material)
         used[material.name] = material
-        for cell_number in cells:
+        for cell_number in numbers:
             cell = model.cell(cell_number)
             assert cell is not None
             cell.material = number
             cell.density = -float(f"{density * dcf:.6g}")
-            _add_comment(cell, component, dcf)
         report.cells_per_material[material.name] = report.cells_per_material.get(
             material.name, 0
-        ) + len(cells)
+        ) + len(numbers)
         if component.original_volume_cm3:
             report.mass_per_material_g[material.name] = (
                 report.mass_per_material_g.get(material.name, 0.0)
@@ -188,7 +183,7 @@ def assign_materials(
             )
 
     if errors:
-        raise AssignmentError("\n".join(errors))
+        raise AssignmentError("the registry needs fixing:\n" + "\n".join(errors))
 
     defined = {m.id for m in model.materials() if m.id is not None}
     for material in sorted(used.values(), key=lambda m: m.number or 0):
@@ -202,19 +197,6 @@ def assign_materials(
         else:
             report.without_composition.append(material.name)
     return report
-
-
-def _add_comment(cell: migjorn.Cell, component: Component, dcf: float | None) -> None:
-    if f"$ {COMMENT_TAG}" in cell.text:
-        return  # already processed
-    comment = f"{COMMENT_TAG}{component.key} {component.name}"
-    if dcf is not None and abs(dcf - 1.0) > 1e-4:
-        comment += f" DCF={dcf:.4f}"
-    last_line = cell.text.rstrip("\r\n").split("\n")[-1]
-    room = MAX_LINE - len(last_line) - 3
-    if room < len(COMMENT_TAG) + len(str(component.key)):
-        return
-    cell.append_comment(f"$ {comment[:room]}")
 
 
 def _material_card(material: Material) -> str:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import json
 from pathlib import Path
@@ -28,12 +29,6 @@ RegistryOption = Annotated[
         help="Component registry CSV. Default: the only *_registry.csv next to the "
         "input files or in the current folder.",
     ),
-]
-CellMapOption = Annotated[
-    Path, typer.Option("--cell-map", "-m", help="Cell map CSV written by 'export'.")
-]
-FirstCellOption = Annotated[
-    int, typer.Option(help="Cell number given by the converter to the first solid.")
 ]
 
 
@@ -245,30 +240,28 @@ def export(
         Path, typer.Option("--output", "-o", help="STEP file to convert to MCNP.")
     ],
     registry: RegistryOption = None,
-    cell_map: Annotated[
-        Path | None, typer.Option("--cell-map", "-m", help="Cell map CSV to write.")
-    ] = None,
 ) -> None:
-    """Write the STEP file for the CAD-to-MCNP converter and its cell map.
+    """Write the STEP file for the CAD-to-MCNP converter.
 
-    Solids are written one per product, sorted by component ID and instance: the n-th
-    solid becomes the n-th cell of the converted model.
+    Solids are written one per product, sorted by component ID and instance, and
+    named with both ('[rm12.3] Bolt'). The converter copies the names into the cell
+    comments, which is how 'compare', 'materials' and 'slice' find each component's
+    cells.
     """
     from radmodeling import workflow
     from radmodeling.registry import Registry
 
-    cell_map = cell_map or output.with_name(f"{output.stem}_cells.csv")
     registry = _registry(registry, [simplified])
     assert registry is not None
     _writable(registry)
     reg = Registry.load(registry)
     with console.status("Exporting..."):
-        result = workflow.export(simplified, reg, output, cell_map)
+        result = workflow.export(simplified, reg, output)
     reg.save(registry)
-    keys = result.cell_map.keys
+    keys = result.keys
     console.print(
-        f"[green]Exported {len(keys)} solids[/] of {len(set(keys))} instances.\n"
-        f"  STEP:     {esc(str(output))}\n  Cell map: {esc(str(cell_map))}"
+        f"[green]Exported {len(keys)} solids[/] of {len(set(keys))} instances to "
+        f"{esc(str(output))}"
     )
     if result.added:
         console.print(
@@ -292,7 +285,6 @@ def export(
 @app.command()
 def materials(
     mcnp: Annotated[Path, typer.Argument(help="MCNP input from the converter.")],
-    cell_map: CellMapOption,
     library: Annotated[
         Path, typer.Option("--library", "-l", help="Material library TOML.")
     ],
@@ -300,14 +292,12 @@ def materials(
     output: Annotated[
         Path | None, typer.Option("--output", "-o", help="MCNP input to write.")
     ] = None,
-    first_cell: FirstCellOption = 1,
     dcf: Annotated[
         bool,
         typer.Option(help="Apply density correction factors from the MCNP volumes."),
     ] = True,
 ) -> None:
-    """Assign materials, densities (with DCF) and component comments to the cells."""
-    from radmodeling.cellmap import CellMap
+    """Assign materials and densities (with DCF) to the tagged cells."""
     from radmodeling.mcnp.geometry import read_model
     from radmodeling.mcnp.materials import (
         AssignmentError,
@@ -317,20 +307,18 @@ def materials(
     from radmodeling.registry import Registry
 
     output = output or mcnp.with_name(f"{mcnp.stem}_materials{mcnp.suffix}")
-    registry = _registry(registry, [mcnp, cell_map])
+    registry = _registry(registry, [mcnp])
     assert registry is not None
     model = read_model(mcnp)
     try:
         report = assign_materials(
             model,
             Registry.load(registry),
-            CellMap.load(cell_map),
             MaterialLibrary.load(library),
-            first_cell=first_cell,
             use_dcf=dcf,
         )
     except AssignmentError as exc:
-        _fail(f"the registry needs fixing:\n{exc}")
+        _fail(str(exc))
     model.save(str(output))
 
     table = Table(title="Materials")
@@ -364,7 +352,6 @@ def materials(
 def compare(
     step: Annotated[Path, typer.Argument(help="STEP written by 'export'.")],
     mcnp: Annotated[Path, typer.Argument(help="MCNP input converted from it.")],
-    cell_map: CellMapOption,
     registry: Annotated[
         Path | None,
         typer.Option(
@@ -377,7 +364,6 @@ def compare(
     no_registry: Annotated[
         bool, typer.Option("--no-registry", help="Do not update any registry.")
     ] = False,
-    first_cell: FirstCellOption = 1,
     points: Annotated[int, typer.Option(help="Sample points per component.")] = 100_000,
     components: Annotated[
         str | None,
@@ -396,29 +382,39 @@ def compare(
     Gives the MCNP volume of each instance (for the density correction factors) and
     the volume where CAD and MCNP disagree.
     """
-    from radmodeling.cellmap import CellMap
     from radmodeling.compare import compare_component
     from radmodeling.mcnp.geometry import Geometry
+    from radmodeling.mcnp.tags import cells_by_instance
     from radmodeling.registry import Key, Registry
     from radmodeling.workflow import exported_solids
 
     if not no_registry:
-        registry = _registry(registry, [step, mcnp, cell_map], required=False)
+        registry = _registry(registry, [step, mcnp], required=False)
         if registry is not None:
             _writable(registry)
         else:
             console.print(
                 "[yellow]No registry found: MCNP volumes will not be saved[/]"
             )
-    cmap = CellMap.load(cell_map)
-    cells_by_instance = cmap.cells_by_instance(first_cell)
     with console.status("Reading the models..."):
         try:
-            solids = exported_solids(step, cmap)
+            solids = exported_solids(step)
         except ValueError as exc:
             _fail(str(exc))
         geometry = Geometry.from_file(mcnp)
-    selected = sorted(cells_by_instance)
+    cells = cells_by_instance(geometry.model)
+    if not cells:
+        _fail(
+            f"no cell comment of {mcnp} has an '[rmID.instance]' tag: convert "
+            f"{step} keeping the solid names as cell comments"
+        )
+    orphans = sorted(set(cells) - set(solids))
+    if orphans:
+        console.print(
+            f"[yellow]Cells tagged with instances not in {esc(str(step))}:[/] "
+            + _keys_text(orphans)
+        )
+    selected = sorted(solids)
     if components:
         wanted = components.replace(",", " ").split()
         ids = {int(t) for t in wanted if "." not in t}
@@ -434,7 +430,7 @@ def compare(
                 compare_component(
                     key,
                     solids[key],
-                    cells_by_instance[key],
+                    cells.get(key, []),
                     geometry,
                     n_points=points,
                     rng=rng,
@@ -451,7 +447,11 @@ def compare(
         table.add_column(column)
     for r in sorted(problems, key=lambda r: -np.nan_to_num(r.discrepancy_pct, nan=1e9)):
         note = r.error or (
-            "cells exceed the sampled box" if r.touches_sampling_box else ""
+            "no tagged cells"
+            if not r.cells
+            else "cells exceed the sampled box"
+            if r.touches_sampling_box
+            else ""
         )
         table.add_row(
             str(r.key),
@@ -532,13 +532,12 @@ def slice_(
     height: Annotated[float | None, typer.Option(help="Height [cm].")] = None,
     resolution: Annotated[int, typer.Option(help="Pixels along the width.")] = 800,
     step: Annotated[
-        Path | None, typer.Option(help="STEP model to overlay (from 'export').")
-    ] = None,
-    cell_map: Annotated[
         Path | None,
-        typer.Option("--cell-map", "-m", help="With --step, highlight mismatches."),
+        typer.Option(
+            help="STEP model to overlay. With the one from 'export', CAD/MCNP "
+            "mismatches are highlighted."
+        ),
     ] = None,
-    first_cell: FirstCellOption = 1,
     library: Annotated[
         Path | None, typer.Option("--library", "-l", help="For material names.")
     ] = None,
@@ -549,7 +548,6 @@ def slice_(
     """
     from radmodeling.cad.section import section_polylines
     from radmodeling.cad.step import read_step
-    from radmodeling.cellmap import CellMap
     from radmodeling.compare import (
         MM_PER_CM,
         Plane,
@@ -559,19 +557,18 @@ def slice_(
     )
     from radmodeling.mcnp.geometry import Geometry
     from radmodeling.mcnp.materials import MaterialLibrary
+    from radmodeling.mcnp.tags import cells_by_instance
     from radmodeling.plot import material_slots, render_slice
     from radmodeling.workflow import exported_solids
 
     geometry = Geometry.from_file(mcnp)
-    cmap = CellMap.load(cell_map) if step and cell_map else None
+    cells = cells_by_instance(geometry.model)
     by_instance = {}
-    if step and cmap:
-        try:
-            by_instance = exported_solids(step, cmap)
-        except ValueError as exc:
-            _fail(str(exc))
+    if step and cells:
+        with contextlib.suppress(ValueError):  # not from 'export': overlay only
+            by_instance = exported_solids(step)
     solids = [s for group in by_instance.values() for s in group]
-    if step and not cmap:
+    if step and not by_instance:
         solids = [s for part in read_step(step) for s in part.solids]
 
     centre, extent = None, None
@@ -617,7 +614,7 @@ def slice_(
                 ):
                     local = line / MM_PER_CM - plane.origin
                     outlines.append(np.column_stack([local @ plane.u, local @ plane.v]))
-        if cmap:
+        if by_instance:
             with console.status("Comparing CAD and MCNP..."):
                 # Pixels are labelled 1, 2, 3... by instance
                 label = {key: n for n, key in enumerate(sorted(by_instance), 1)}
@@ -628,8 +625,9 @@ def slice_(
                     n_v,
                 )
                 owner = {}
-                for key, cells in cmap.cells_by_instance(first_cell).items():
-                    owner.update(dict.fromkeys(cells, label[key]))
+                for key, numbers in cells.items():
+                    if key in label:
+                        owner.update(dict.fromkeys(numbers, label[key]))
                 result.mcnp_component = np.vectorize(lambda c: owner.get(int(c), 0))(
                     result.cells
                 )

@@ -16,12 +16,12 @@ original.step ──radmod init──▶ tagged.step + registry.csv
                     simplify in SpaceClaim (or any CAD program)
                                    │
 simplified.step ──radmod check──▶ volume deviations, tori, splines, invalid solids
-                ──radmod export─▶ for_conversion.step + cell map
+                ──radmod export─▶ for_conversion.step
                                    │
                          GEOUNED (or another converter)
                                    │
-model.mcnp ──radmod compare──▶ CAD vs MCNP volumes, density correction factors
-           ──radmod materials─▶ materials, densities and comments in the cells
+model.mcnp ──radmod compare───▶ CAD vs MCNP volumes, density correction factors
+           ──radmod materials─▶ materials and densities in the cells
            ──radmod slice─────▶ slice plots with the CAD overlaid
 ```
 
@@ -61,9 +61,9 @@ radmod init machine.step                       # tag + registry
 radmod check simplified.step -r machine_registry.csv
 radmod export simplified.step -r machine_registry.csv -o for_conversion.step
 # convert for_conversion.step to model.mcnp with GEOUNED
-radmod compare for_conversion.step model.mcnp -m for_conversion_cells.csv -r machine_registry.csv
-radmod materials model.mcnp -r machine_registry.csv -m for_conversion_cells.csv -l materials.toml
-radmod slice model_materials.mcnp -o slice.png --normal z --step for_conversion.step -m for_conversion_cells.csv
+radmod compare for_conversion.step model.mcnp -r machine_registry.csv
+radmod materials model.mcnp -r machine_registry.csv -l materials.toml
+radmod slice model_materials.mcnp -o slice.png --normal z --step for_conversion.step
 ```
 
 SpaceClaim tools: `radmod spaceclaim-loaders <folder>` and publish the loaders once.

@@ -23,12 +23,19 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, fields
 from typing import NamedTuple
 
-# No colon ("[rm:12]"): SpaceClaim's STEP export drops colons from names
-TAG_RE = re.compile(r"\s*\[rm(\d+)\]")
+# No colon ("[rm:12]"): SpaceClaim's STEP export drops colons from names. The STEP
+# written by 'export' tags each solid with its instance too: "[rm12.3]"
+TAG_RE = re.compile(r"\s*\[rm(\d+)(?:\.(\d+))?\]")
 
 
 def tag_name(name: str, component_id: int) -> str:
     return f"{TAG_RE.sub('', name).strip()} [rm{component_id}]"
+
+
+def key_name(name: str, key: Key) -> str:
+    """Name tagged with a registry key, tag first: converters copy the names of the
+    solids into the cell comments, and some cut or drop the end of long names."""
+    return f"[rm{key}] {TAG_RE.sub('', name).strip()}"
 
 
 def untag_name(name: str) -> str:
@@ -41,6 +48,14 @@ def find_id(names: Iterable[str]) -> int | None:
         match = TAG_RE.search(name)
         if match:
             return int(match.group(1))
+    return None
+
+
+def find_key(name: str) -> Key | None:
+    """Return the registry key of a name tagged with its instance (``[rm12.3]``)."""
+    for match in TAG_RE.finditer(name):
+        if match.group(2) is not None:
+            return Key(int(match.group(1)), int(match.group(2)))
     return None
 
 

@@ -20,20 +20,22 @@ Workflow
    Volume deviations and geometry diagnostics of a simplified model.
 
 ``radmod export SIMPLIFIED.step -r REGISTRY -o OUT.step``
-   STEP file for the CAD-to-MCNP converter and its cell map.
+   STEP file for the CAD-to-MCNP converter, each solid named with its registry row
+   (``[rm12.3] Bolt``). The converter copies the names into the cell comments, which
+   is how ``compare``, ``materials`` and ``slice`` find the cells of each component.
 
-``radmod compare OUT.step MODEL.mcnp -m CELLS.csv``
+``radmod compare OUT.step MODEL.mcnp``
    CAD vs MCNP volumes and discrepancies per instance. ``--components 3,7.2`` limits
    it to some components (all instances of 3, instance 2 of 7), ``--points`` sets the
    samples per instance (100 000 by default).
 
-``radmod materials MODEL.mcnp -r REGISTRY -m CELLS.csv -l LIBRARY.toml``
-   Materials, densities, density correction factors and comments in the cells.
+``radmod materials MODEL.mcnp -r REGISTRY -l LIBRARY.toml``
+   Materials, densities and density correction factors in the tagged cells.
 
 ``radmod slice MODEL.mcnp -o SLICE.png``
    Slice plot. ``--normal`` is ``x``, ``y``, ``z`` or any vector such as ``1,1,0``;
-   ``--origin`` is the centre of the image; ``--step`` overlays the CAD and, with
-   ``--cell-map``, highlights CAD/MCNP mismatches.
+   ``--origin`` is the centre of the image; ``--step`` overlays the CAD and, with the
+   STEP file from ``export``, highlights CAD/MCNP mismatches.
 
 Geometry tools
 --------------

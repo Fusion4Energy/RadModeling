@@ -6,8 +6,10 @@
    instances of a part stay linked, so each part is simplified only once.
 3. :func:`check` matches the simplified model back to the registry and reports volume
    deviations and geometry that will not convert well.
-4. :func:`export` writes the STEP file to convert, one solid per product in a known
-   order, and the map between cell order and registry rows.
+4. :func:`export` writes the STEP file to convert, one solid per product sorted by
+   registry key, each named with its key (``[rm12.3] Bolt``). The converter copies
+   the names into the cell comments, which links every cell to its registry row
+   (:mod:`radmodeling.mcnp.tags`).
 
 Instances are matched to their registry rows by their centre of mass: simplifying a
 part barely moves it compared with the distance between instances. An instance further
@@ -30,7 +32,6 @@ from OCP.TopoDS import TopoDS_Shape, TopoDS_Solid
 from radmodeling.cad.analysis import ShapeReport, analyse
 from radmodeling.cad.occ import GeometryMap, volume_and_centroid
 from radmodeling.cad.step import Part, compound, read_step, write_step
-from radmodeling.cellmap import CellMap
 from radmodeling.compare import MM_PER_CM
 from radmodeling.registry import (
     TAG_RE,
@@ -38,6 +39,8 @@ from radmodeling.registry import (
     Key,
     Registry,
     find_id,
+    find_key,
+    key_name,
     tag_name,
     untag_name,
 )
@@ -403,7 +406,7 @@ def check(
 
 @dataclass
 class ExportResult:
-    cell_map: CellMap
+    keys: list[Key]  # instance of each exported solid, in order
     added: list[Key]  # rows added to the registry
     # Rows added for untagged parts: the CAD model does not know their tags, so they
     # would be added again by the next export unless they are tagged in the CAD
@@ -414,9 +417,11 @@ def export(
     simplified_step: str | os.PathLike,
     registry: Registry,
     output_step: str | os.PathLike,
-    cell_map_csv: str | os.PathLike,
 ) -> ExportResult:
     """Write the model to convert with one solid per product, sorted by registry key.
+
+    Each solid is named with its registry key (``[rm12.3] Pipe``), so the file alone
+    tells which instance every solid, and so every converted cell, belongs to.
 
     New bodies are added to the registry with status ``new``: components with a tag
     that is not in the registry yet, copies of a component (more instances than rows)
@@ -474,28 +479,24 @@ def export(
         solids = found[key].solids
         for k, solid in enumerate(solids, start=1):
             suffix = f" #{k}" if len(solids) > 1 else ""
-            parts.append(Part(tag_name(component.name + suffix, key.id), root, solid))
+            parts.append(Part(key_name(component.name + suffix, key), root, solid))
             keys.append(key)
         component.simplified_volume_cm3 = found[key].volume_cm3
         component.simplified_solids = len(solids)
 
     write_step(parts, output_step, instancing=False)
-    cell_map = CellMap(keys)
-    cell_map.save(cell_map_csv)
-    return ExportResult(cell_map, added, untagged)
+    return ExportResult(keys, added, untagged)
 
 
-def exported_solids(
-    step: str | os.PathLike, cell_map: CellMap
-) -> dict[Key, list[TopoDS_Solid]]:
+def exported_solids(step: str | os.PathLike) -> dict[Key, list[TopoDS_Solid]]:
     """The solids of a STEP file written by :func:`export`, by registry key."""
-    solids = [s for p in read_step(step) for s in p.solids]
-    if len(solids) != len(cell_map.keys):
-        raise ValueError(
-            f"{os.fspath(step)} has {len(solids)} solids but the cell map "
-            f"{len(cell_map.keys)}: use the STEP file written with the cell map"
-        )
     result: dict[Key, list[TopoDS_Solid]] = defaultdict(list)
-    for key, solid in zip(cell_map.keys, solids, strict=True):
-        result[key].append(solid)
+    for part in read_step(step):
+        key = find_key(part.name)
+        if key is None:
+            raise ValueError(
+                f"{os.fspath(step)}: {part.name!r} has no '[rmID.instance]' tag: use "
+                "the STEP file written by 'radmod export'"
+            )
+        result[key].extend(part.solids)
     return dict(result)

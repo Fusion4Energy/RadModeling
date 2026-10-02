@@ -16,12 +16,11 @@ Layout
      cli.py            the radmod command line interface
      registry.py       component registry and [rmID] tags
      workflow.py       init, check and export
-     cellmap.py        solid order <-> registry rows (ID, instance)
      compare.py        CAD vs MCNP sampling and slices
      plot.py           slice rendering
      fmesh.py          FMESH cards from boxes
      cad/              OpenCascade: STEP, meshes, sections, analysis, elbows
-     mcnp/             MCNP geometry evaluation and material assignment
+     mcnp/             MCNP geometry evaluation, cell tags, material assignment
      spaceclaim/       IronPython tools run by the SpaceClaim loaders
    src/radmod/         alias so that "python -m radmod" works like "radmod"
    tests/              pytest suite; tests/models.py builds the test CAD and MCNP

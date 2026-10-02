@@ -110,14 +110,21 @@ def write_instanced_assembly(path: Path) -> Path:
     return path
 
 
-def mcnp_text(ball_radius: float = 2.5) -> str:
-    """MCNP model (cm) with the cells in the order 'export' writes the solids."""
+def mcnp_text(ball_radius: float = 2.5, tags: list[str] | None = None) -> str:
+    """MCNP model (cm) of 'export.step' converted the way GEOUNED does it: the cells
+    in the order of the solids, each with the CAD path of its solid as a comment."""
+    tags = tags or ["1.1", "2.1", "3.1", "4.1", "4.1"]
+    names = ["Block", "Pipe", "Ball", "Bolts #1", "Bolts #2"]
+    path = [
+        f"\n           $/export/[rm{t}] {n}1" for t, n in zip(tags, names, strict=True)
+    ]
     return f"""Test model
-1 0  1 -2 3 -4 5 -6 7     imp:n=1
-2 0  -8 9 5 -10           imp:n=1
-3 0  -11                  imp:n=1
-4 0  -12 5 -13            imp:n=1
-5 0  -14 5 -13            imp:n=1
+c Original Step file : export.step
+1 0  1 -2 3 -4 5 -6 7     imp:n=1{path[0]}
+2 0  -8 9 5 -10           imp:n=1{path[1]}
+3 0  -11                  imp:n=1{path[2]}
+4 0  -12 5 -13            imp:n=1{path[3]}
+5 0  -14 5 -13            imp:n=1{path[4]}
 6 0  -99 #1 #2 #3 #4 #5   imp:n=1
 7 0  99                   imp:n=0
 

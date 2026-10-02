@@ -144,19 +144,34 @@ To get rid of the tori of pipe elbows, see ``radmod elbows`` in :doc:`commands`.
 
    radmod export simplified.step -r machine_registry.csv -o for_conversion.step
 
-Writes every solid as its own product, sorted by component ID and instance, and the
-cell map ``for_conversion_cells.csv``: the converter makes the n-th solid the n-th
-cell, and the cell map gives the component and instance of each. Instances are
+Writes every solid as its own product, sorted by component ID and instance, and
+named with both: ``[rm12.3] Bolt`` is instance 3 of component 12. Instances are
 unlinked here, as converters need every solid on its own. Convert
 ``for_conversion.step`` with GEOUNED or similar.
+
+The converter copies the name of each solid into a comment on its cell. GEOUNED
+writes the CAD path of the solid:
+
+.. code-block:: text
+
+   103   10  -7.9300000 -11 12
+              imp:n=1.0   imp:p=1.0
+              $/for_conversion/[rm12.3] Bolt1
+
+This tag is the link between the cell and its registry row. It stays with the cell
+through renumbering, merging models or editing by hand, and the commands below find
+the cells of each component by their tags alone, never by their numbers. Cells
+without a tag (voids, graveyard) are ignored. Keep the solid names in the comments if
+the converter has an option for it, and convert the STEP file as written by
+``export``: renaming its solids loses the tags.
 
 6. Compare CAD and MCNP
 -----------------------
 
 .. code-block:: bash
 
-   radmod compare for_conversion.step model.mcnp -m for_conversion_cells.csv \
-       -r machine_registry.csv --report compare.csv
+   radmod compare for_conversion.step model.mcnp -r machine_registry.csv \
+       --report compare.csv
 
 For every instance, random points in its bounding box are classified against both
 the CAD solids and the MCNP cells. ``--components 3,7.2`` limits it to all the
@@ -170,22 +185,21 @@ instances of component 3 and instance 2 of component 7. This gives:
 * a warning when the cells reach the border of the sampled box, meaning they extend
   well beyond the CAD component.
 
-Use ``--first-cell`` if the converter did not start numbering cells at 1. A wrong cell
-numbering shows up immediately as large discrepancies.
+Instances of the STEP file without tagged cells are reported with a 100 %
+discrepancy, and cell tags of instances that are not in the STEP file are listed.
 
 7. Assign the materials
 -----------------------
 
 .. code-block:: bash
 
-   radmod materials model.mcnp -r machine_registry.csv -m for_conversion_cells.csv \
-       -l materials.toml
+   radmod materials model.mcnp -r machine_registry.csv -l materials.toml
 
-Writes ``model_materials.mcnp`` with the material number and density of every cell
-(density × DCF, as mass density), a ``$ rm:ID.INSTANCE name`` comment on each cell
-(``$ rm:12.3 Bolt``) and the material cards from the library. Every problem
-(components without material, unknown materials, missing cells...) is reported at once
-so the registry can be fixed in one go. Use ``--no-dcf`` to ignore the density correction factors.
+Writes ``model_materials.mcnp`` with the material number and density of every
+tagged cell (density × DCF, as mass density) and the material cards from the
+library. Every problem (components without material, unknown materials, tags of
+components not in the registry...) is reported at once so the registry can be fixed
+in one go. Use ``--no-dcf`` to ignore the density correction factors.
 
 The material library is a TOML file:
 
@@ -211,8 +225,8 @@ them).
 .. code-block:: bash
 
    radmod slice model_materials.mcnp -o slice.png --normal z --origin 0,0,120 \
-       --width 400 --step for_conversion.step -m for_conversion_cells.csv
+       --width 400 --step for_conversion.step
 
 Plots the MCNP cells coloured by material with the CAD section on top. Regions in no
-cell (where particles would get lost), overlapping cells and CAD/MCNP mismatches are
-highlighted. Without ``--origin`` and ``--width`` the slice covers the whole CAD model.
+cell (where particles would get lost), overlapping cells and, with the STEP file from
+``export``, CAD/MCNP mismatches are highlighted. Without ``--origin`` and ``--width`` the slice covers the whole CAD model.
