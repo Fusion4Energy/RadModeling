@@ -129,11 +129,11 @@ class Component:
     def update_computed(self) -> None:
         self.volume_diff_pct = None
         if self.original_volume_cm3 and self.simplified_volume_cm3 is not None:
-            self.volume_diff_pct = (
-                (self.simplified_volume_cm3 - self.original_volume_cm3)
-                / self.original_volume_cm3
-                * 100
-            )
+            # 3 decimals: below that it is round-off (volumes are saved with .6g)
+            diff = (
+                self.simplified_volume_cm3 - self.original_volume_cm3
+            ) / self.original_volume_cm3
+            self.volume_diff_pct = round(diff * 100, 3) + 0.0  # + 0.0 avoids -0.0
         self.dcf = None
         if self.original_volume_cm3 and self.mcnp_volume_cm3:
             self.dcf = self.original_volume_cm3 / self.mcnp_volume_cm3

@@ -113,7 +113,7 @@ def init(
 
     All the instances of a part share its tag and stay linked, and each instance gets
     its own row in the registry. Simplify the tagged STEP in any CAD program. The
-    [rmID] tags in the component names must be kept; everything else (names,
+    \\[rmID] tags in the component names must be kept; everything else (names,
     hierarchy) can change freely.
     """
     from radmodeling import workflow
@@ -248,7 +248,7 @@ def export(
     """Write the STEP file for the CAD-to-MCNP converter.
 
     Solids are written one per product, sorted by component ID and instance, and
-    named with both ('[rm12.3] Bolt'). The converter copies the names into the cell
+    named with both ('\\[rm12.3] Bolt'). The converter copies the names into the cell
     comments, which is how 'compare', 'materials' and 'slice' find each component's
     cells.
     """
