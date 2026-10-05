@@ -45,6 +45,7 @@ Tools
    shows the report and colours the components with problems in red. The document is
    not changed, so the ``.scdocx`` stays the working file. The registry must not be
    open in Excel, as the check updates it. SpaceClaim waits while the check runs.
+   The volume tolerance is ``VolumeTolerance`` (passed as ``--tolerance``).
 
    It runs ``radmod`` with the Python that wrote the loaders. Loaders written before
    this tool existed do not know it: write them again and publish *Check model*.
@@ -59,11 +60,13 @@ Tools
 
 **Check volumes**
    Colours in red the instances whose volume differs from the original by more
-   than 1 %, blue transparent the rest, and grey the untagged bodies.
+   than ``VolumeTolerance`` (1 % by default), blue transparent the rest, and grey the
+   untagged bodies.
 
 **Adjust volume**
    Select one or more faces of a component and run it: the faces are extruded until
-   the selected instance recovers its original volume (within 0.5 %).
+   the selected instance recovers its original volume, within half of
+   ``VolumeTolerance`` (0.5 % by default), well inside what the checks accept.
 
 **Show by material**
    Choose materials from a list to show only their components. ``(no material)``
@@ -97,20 +100,27 @@ Tools
    may touch neighbouring parts.
 
 **Load points**
-   Draws the points of a CSV file (x, y, z in cm) as small spheres, for instance the
-   lost particles found by `F4Enix <https://github.com/Fusion4Energy/F4Enix>`_.
+   Draws the points of a CSV file (x, y, z in cm) as spheres of radius
+   ``PointRadius`` (20 mm by default), for instance the lost particles found by
+   `F4Enix <https://github.com/Fusion4Energy/F4Enix>`_.
 
 The tolerances and limits are constants at the top of each script in
 ``src/radmodeling/spaceclaim``. Some can be changed per document with script
 parameters: in the *Groups* panel, *Create Parameter*, then give it the name the tool
 reads and a value. Without the parameter, the tool uses its default.
 
-==================== ===================== =======
-Parameter            Tool                  Default
-==================== ===================== =======
-``ElbowMaxAngle``    *Replace elbows*      22.5
-``ElbowMinSegments`` *Replace elbows*      2
-==================== ===================== =======
+==================== ============================================= ========
+Parameter            Tools                                         Default
+==================== ============================================= ========
+``VolumeTolerance``  *Check model*, *Check volumes*, *Adjust         1 %
+                     volume* (aims at half of it)
+``ElbowMaxAngle``    *Replace elbows*: maximum turn per segment    22.5°
+``ElbowMinSegments`` *Replace elbows*: minimum segments per bend   2
+``PointRadius``      *Load points*: sphere radius                  20 mm
+==================== ============================================= ========
+
+``VolumeTolerance`` only reaches ``radmod check`` through *Check model*: run from a
+terminal, ``radmod check`` takes ``--tolerance`` (1 % by default).
 
 .. note::
 

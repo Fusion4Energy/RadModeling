@@ -56,6 +56,24 @@ def rm_parameter(name, default):
     return default
 
 
+def rm_positive_parameter(name, default):
+    """A script parameter that must be more than 0, or None (after telling the user)
+    if it is not."""
+    value = rm_parameter(name, default)
+    if value <= 0:
+        rm_message("The script parameter %s must be more than 0." % name)
+        return None
+    return value
+
+
+RM_VOLUME_TOLERANCE_PCT = 1.0  # default of the VolumeTolerance script parameter
+
+
+def rm_volume_tolerance():
+    """Maximum volume deviation allowed [%], shared by the volume tools."""
+    return rm_positive_parameter("VolumeTolerance", RM_VOLUME_TOLERANCE_PCT)
+
+
 def rm_tag(name):
     match = RM_TAG.search(name or "")
     return int(match.group(1)) if match else None

@@ -2,12 +2,16 @@
 #
 # Saves a STEP copy next to the document (<name>_check.step), runs 'radmod check' on it
 # with the registry, shows its report and colours the components with problems in
-# red. The document itself is not changed and stays the working file.
+# red. The document itself is not changed and stays the working file. The volume
+# tolerance is the VolumeTolerance script parameter (1 % by default).
 import json
 import os
 
 
 def rm_check_model():
+    tolerance = rm_volume_tolerance()
+    if tolerance is None:
+        return
     document = GetRootPart().Document
     path = document.Path
     if not path:
@@ -31,7 +35,16 @@ def rm_check_model():
         os.remove(problems)
 
     code, output = rm_run_radmod(
-        ["check", step, "--registry", registry, "--highlight", problems]
+        [
+            "check",
+            step,
+            "--registry",
+            registry,
+            "--highlight",
+            problems,
+            "--tolerance",
+            "%g" % tolerance,
+        ]
     )
     if code != 0 or not os.path.exists(problems):
         rm_message("radmod check failed:\n\n" + output)

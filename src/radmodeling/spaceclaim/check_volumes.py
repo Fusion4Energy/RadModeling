@@ -4,10 +4,13 @@
 #
 # Red: beyond the tolerance. Blue transparent: within it. Grey: untagged bodies.
 # The same check, plus geometry diagnostics, is 'radmod check' on an exported STEP.
-TOLERANCE_PCT = 1.0
+# The tolerance is the VolumeTolerance script parameter (1 % by default).
 
 
 def rm_check_volumes():
+    tolerance = rm_volume_tolerance()
+    if tolerance is None:
+        return
     registry = rm_read_registry()
     by_id, untagged = rm_bodies_by_id()
     exceeding, fine, problems = [], [], []
@@ -20,7 +23,7 @@ def rm_check_volumes():
         for instance in rm_instances(bodies):
             difference = (rm_volume_cm3(instance) - target) / target * 100
             n_instances += 1
-            if abs(difference) > TOLERANCE_PCT:
+            if abs(difference) > tolerance:
                 n_exceeding += 1
                 exceeding.extend(instance)
             else:
@@ -33,7 +36,7 @@ def rm_check_volumes():
         "Instances beyond +/-%g%% volume: %d of %d\nUntagged bodies: %d\n"
         "Components not checked: %s"
         % (
-            TOLERANCE_PCT,
+            tolerance,
             n_exceeding,
             n_instances,
             len(untagged),

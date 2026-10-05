@@ -2,12 +2,17 @@
 # volume (from the registry). Select one or more faces of a single component first.
 #
 # The target is the volume of one instance: linked instances change together, and
-# instances that were deleted or made independent do not disturb the result.
-TOLERANCE_PCT = 0.5
+# instances that were deleted or made independent do not disturb the result. It
+# stops within half of the VolumeTolerance script parameter (1 % by default), well
+# inside what the checks accept.
 MAX_ITERATIONS = 25
 
 
 def rm_adjust_volume():
+    tolerance = rm_volume_tolerance()
+    if tolerance is None:
+        return
+    tolerance /= 2
     selection = Selection.GetActive()
     faces = list(selection.Items)
     if not faces:
@@ -39,7 +44,7 @@ def rm_adjust_volume():
     distance, value = 0.0, error()
     step = -value / area_cm2 * 10.0 if area_cm2 else 1.0
     iterations = 0
-    while abs(value) / target * 100 > TOLERANCE_PCT and iterations < MAX_ITERATIONS:
+    while abs(value) / target * 100 > tolerance and iterations < MAX_ITERATIONS:
         ExtrudeFaces.Execute(selection, MM(step), options)
         new_distance, new_value = distance + step, error()
         slope = (new_value - value) / step if step else 0.0

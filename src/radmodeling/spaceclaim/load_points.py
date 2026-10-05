@@ -1,12 +1,16 @@
 # RadModeling: draw points from a CSV (x, y, z in cm in the first three columns, one
-# header line) as small spheres, e.g. the lost particles reported by F4Enix.
+# header line) as small spheres, e.g. the lost particles reported by F4Enix. The
+# sphere radius is the PointRadius script parameter in mm (20 by default).
 import csv
 
-RADIUS_MM = 20.0
+RADIUS_MM = 20.0  # default of PointRadius
 MAX_POINTS = 1000
 
 
 def rm_load_points():
+    radius = rm_positive_parameter("PointRadius", RADIUS_MM)
+    if radius is None:
+        return
     path = rm_ask_file("Select the CSV of points", "CSV (*.csv)|*.csv")
     if not path:
         return
@@ -23,7 +27,7 @@ def rm_load_points():
                 continue
             SphereBody.Create(
                 Point.Create(x, y, z),
-                Point.Create(x, y, z + MM(RADIUS_MM)),
+                Point.Create(x, y, z + MM(radius)),
                 ExtrudeType.ForceIndependent,
             )
             count += 1
