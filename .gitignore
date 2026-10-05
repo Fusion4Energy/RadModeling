@@ -1,4 +1,4 @@
-docs/build/
+site/
 __pycache__/
 *.mcnp*
 *.db

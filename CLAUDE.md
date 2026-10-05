@@ -1,7 +1,8 @@
 # RadModeling
 
 CAD preparation and CAD-to-MCNP quality assurance. Python package `radmodeling`
-(`src/radmodeling`) with the `radmod` CLI (typer). Docs in `docs/source` (Sphinx).
+(`src/radmodeling`) with the `radmod` CLI (typer). Docs in `docs` (Markdown, built by
+Zensical from `zensical.toml`).
 `src/radmod` is only an alias so `python -m radmod` works like the `radmod` command;
 keep all code in `radmodeling`.
 
@@ -10,7 +11,8 @@ keep all code in `radmodeling`.
 - Tests: `.venv/bin/pytest` (fast, ~5 s; builds its CAD with OCP, no fixture files)
 - Lint/format: `.venv/bin/ruff check . && .venv/bin/ruff format .`
 - Types: `.venv/bin/pyright src tests` (OCP types come from `cadquery-ocp-stubs`)
-- Docs: `.venv/bin/sphinx-build -b html docs/source <out>`
+- Docs: `.venv/bin/zensical build` (or `serve`); theme colours in
+  `docs/assets/stylesheets/extra.css`
 
 ## Architecture
 

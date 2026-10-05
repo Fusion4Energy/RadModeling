@@ -1,0 +1,131 @@
+/* RadModeling theme: Fusion for Energy blue with the amber of the Gitronics
+   trefoil as accent. */
+
+:root {
+  --rm-blue: #003399;
+  --rm-blue-light: #2a5bc4;
+  --rm-blue-dark: #00246b;
+  --rm-amber: #f5a623;
+  --rm-amber-light: #ffd173;
+  --rm-amber-dark: #b86e00;
+}
+
+[data-md-color-primary="custom"] {
+  --md-primary-fg-color: var(--rm-blue);
+  --md-primary-fg-color--light: var(--rm-blue-light);
+  --md-primary-fg-color--dark: var(--rm-blue-dark);
+  --md-primary-bg-color: #ffffff;
+  --md-primary-bg-color--light: #ffffffb3;
+  --md-typeset-a-color: var(--rm-blue);
+}
+
+[data-md-color-accent="custom"] {
+  --md-accent-fg-color: var(--rm-amber-dark);
+  --md-accent-fg-color--transparent: #f5a6231a;
+  --md-accent-bg-color: #ffffff;
+  --md-accent-bg-color--light: #ffffffb3;
+}
+
+[data-md-color-scheme="slate"][data-md-color-primary="custom"] {
+  --md-typeset-a-color: #8fb0ff;
+}
+
+[data-md-color-scheme="slate"][data-md-color-accent="custom"] {
+  --md-accent-fg-color: var(--rm-amber-light);
+  --md-accent-fg-color--transparent: #ffd1731f;
+  --md-accent-bg-color: #16171a;
+}
+
+/* Brand strip under the header: F4E blue into Gitronics amber */
+.md-header::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--rm-blue) 0%, var(--rm-blue-light) 55%, var(--rm-amber) 100%);
+}
+
+/* Headings */
+.md-typeset h2 {
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+}
+
+/* Home hero */
+.md-typeset .rm-hero {
+  clear: both; /* below the floating edit button */
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  margin: 0.5rem 0 2rem;
+  padding: 1.5rem 2rem;
+  border-radius: 0.6rem;
+  background:
+    radial-gradient(circle at 0% 0%, #0033991f, transparent 60%),
+    radial-gradient(circle at 100% 100%, #f5a62324, transparent 60%);
+  border: 1px solid var(--md-default-fg-color--lightest);
+}
+
+.md-typeset .rm-hero > p:first-child {
+  margin: 0;
+  flex: none;
+}
+
+.md-typeset .rm-hero__logo {
+  display: block;
+  width: 8rem;
+  height: auto;
+}
+
+.md-typeset .rm-hero h1 {
+  margin: 0 0 0.2em;
+  font-weight: 800;
+  color: var(--md-default-fg-color);
+}
+
+/* "Rad" in amber, as in the wordmark */
+.md-typeset .rm-hero .rm-rad {
+  color: #e8900c;
+}
+
+[data-md-color-scheme="slate"] .md-typeset .rm-hero .rm-rad {
+  color: var(--rm-amber);
+}
+
+.md-typeset .rm-hero__tagline {
+  margin: 0 0 1.2em;
+  font-size: 1.1em;
+  color: var(--md-default-fg-color--light);
+}
+
+.md-typeset .rm-hero .md-button {
+  margin: 0.2em 0.4em 0.2em 0;
+}
+
+@media screen and (max-width: 44.9375em) {
+  .md-typeset .rm-hero {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.25rem 1rem;
+  }
+}
+
+/* Cards: brand-coloured icons, amber edge on hover */
+.md-typeset .grid.cards > ul > li > p:first-child .twemoji,
+.md-typeset .grid.cards > ul > li > p:first-child svg {
+  color: var(--md-typeset-a-color);
+}
+
+.md-typeset .grid.cards > ul > li {
+  border-top: 3px solid var(--md-primary-fg-color);
+}
+
+.md-typeset .grid.cards > ul > li:hover,
+.md-typeset .grid.cards > ul > li:focus-within {
+  border-color: transparent;
+  border-top-color: var(--rm-amber);
+}
+
+[data-md-color-scheme="slate"] .md-typeset .grid.cards > ul > li {
+  border-top-color: var(--rm-blue-light);
+}

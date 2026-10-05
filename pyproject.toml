@@ -1,10 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "radmodeling"
-version = "2.0.0.dev0"
+dynamic = ["version"]
 description = "CAD preparation and CAD-to-MCNP quality assurance tools"
 readme = "README.md"
 license = { text = "EUPL-1.1" }
@@ -21,9 +21,15 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5", "cadquery-ocp-stubs>=7.8", "pyright>=1.1.380"]
+docs = ["zensical>=0.0.67"]
 
 [project.scripts]
 radmod = "radmodeling.cli:app"
+
+[tool.hatch.version]
+# from the git tags (v2.0.0 -> 2.0.0); builds without git history get the fallback
+source = "vcs"
+fallback-version = "0.0.0"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/radmodeling", "src/radmod"]

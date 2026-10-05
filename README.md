@@ -2,7 +2,10 @@
 ![GitHub issues](https://img.shields.io/github/issues/Fusion4Energy/RadModeling)
 ![](https://img.shields.io/badge/license-EU%20PL-blue)
 
-![RadModeling Logo](docs/source/_static/logo.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-wordmark-dark.svg">
+  <img alt="RadModeling" src="docs/assets/logo-wordmark-light.svg" width="420">
+</picture>
 
 # RadModeling
 
