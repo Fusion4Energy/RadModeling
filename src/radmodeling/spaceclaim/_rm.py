@@ -18,7 +18,11 @@ clr.AddReference("System.Windows.Forms")
 from System.Diagnostics import Process, ProcessStartInfo  # noqa: E402
 from System.Drawing import Color  # noqa: E402
 from System.Text import Encoding  # noqa: E402
-from System.Windows.Forms import DialogResult, OpenFileDialog  # noqa: E402
+from System.Windows.Forms import (  # noqa: E402
+    DialogResult,
+    MessageBox,
+    OpenFileDialog,
+)
 
 RM_TAG = re.compile(r"\[rm(\d+)\]")
 RM_RED = Color.FromArgb(208, 59, 59)
@@ -102,10 +106,15 @@ def rm_body_id(body):
         return None
 
 
+def rm_all_bodies():
+    """Every body of the document, one per instance of the parts that hold it."""
+    return list(GetRootPart().GetDescendants[IDesignBody]())
+
+
 def rm_bodies_by_id():
     """Map component ID -> bodies, and the list of untagged bodies."""
     by_id, untagged = {}, []
-    for body in GetRootPart().GetAllBodies():
+    for body in rm_all_bodies():
         component_id = rm_body_id(body)
         if component_id is None:
             untagged.append(body)
@@ -287,7 +296,7 @@ def rm_set_color(bodies, color, transparent=False):
 
 
 def rm_show_only(bodies):
-    everything = Selection.Create(GetRootPart().GetAllBodies())
+    everything = Selection.Create(rm_all_bodies())
     ViewHelper.SetObjectVisibility(everything, VisibilityType.Hide, False)
     if bodies:
         ViewHelper.SetObjectVisibility(

@@ -778,11 +778,21 @@ LOADER = """# Python Script, API Version = {api}
 # RadModeling loader for '{tool}'. Publish it once as a SpaceClaim tool: it runs the
 # tool from the radmodeling installation, so updating radmodeling updates the tool.
 import os
+import traceback
 
 RADMODELING_SPACECLAIM = r"{folder}"
 RADMODELING_PYTHON = r"{python}"  # runs radmod for the tools that need it
-execfile(os.path.join(RADMODELING_SPACECLAIM, "_rm.py"))
-execfile(os.path.join(RADMODELING_SPACECLAIM, "{script}"))
+try:
+    execfile(os.path.join(RADMODELING_SPACECLAIM, "_rm.py"))
+    execfile(os.path.join(RADMODELING_SPACECLAIM, "{script}"))
+except Exception:
+    # tools published to the ribbon fail silently: show the error
+    import clr
+
+    clr.AddReference("System.Windows.Forms")
+    from System.Windows.Forms import MessageBox
+
+    MessageBox.Show("RadModeling '{tool}' failed:\\n\\n" + traceback.format_exc())
 """
 
 
