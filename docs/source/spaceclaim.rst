@@ -77,8 +77,10 @@ Tools
    Select a torus face of each pipe bend and run it: the bend is replaced by mitred
    cylinder segments. The bend may be a body of its own or part of a longer pipe; the
    inner torus of a hollow pipe is found from the outer one. Each segment turns at
-   most 22.5° (at least 2 segments), the end ones are half segments perpendicular to
-   the pipe, so they join the straight parts exactly.
+   most 22.5°, with at least 2 segments (a 90° bend gets 4); the end ones are half
+   segments perpendicular to the pipe, so they join the straight parts exactly. The
+   script parameters ``ElbowMaxAngle`` and ``ElbowMinSegments`` change these numbers
+   (see below), and the message after each run shows the values used.
 
    The segments follow the tangent polygon of the bend, so the volume grows slightly
    (+1.3 % for 90° in 4 segments, +0.3 % in 8): the density correction factor absorbs
@@ -99,7 +101,16 @@ Tools
    lost particles found by `F4Enix <https://github.com/Fusion4Energy/F4Enix>`_.
 
 The tolerances and limits are constants at the top of each script in
-``src/radmodeling/spaceclaim``.
+``src/radmodeling/spaceclaim``. Some can be changed per document with script
+parameters: in the *Groups* panel, *Create Parameter*, then give it the name the tool
+reads and a value. Without the parameter, the tool uses its default.
+
+==================== ===================== =======
+Parameter            Tool                  Default
+==================== ===================== =======
+``ElbowMaxAngle``    *Replace elbows*      22.5
+``ElbowMinSegments`` *Replace elbows*      2
+==================== ===================== =======
 
 .. note::
 

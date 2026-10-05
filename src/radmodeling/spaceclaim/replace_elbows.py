@@ -18,6 +18,8 @@ import os
 
 from System.Collections.Generic import List
 
+# Defaults of the script parameters ElbowMaxAngle and ElbowMinSegments: create them in
+# the Groups panel of a document for other values there
 MAX_SEGMENT_ANGLE = 22.5  # degrees turned by each segment at most (90 at most)
 MIN_SEGMENTS = 2
 VOLUME_TOLERANCE_PCT = 0.5  # of the bend volume
@@ -198,11 +200,22 @@ def rm_mass(bodies):
     return sum(body.MassProperties.Mass for body in bodies)
 
 
-def rm_pieces(design, elbow):
+def rm_settings():
+    """Maximum turn per segment and minimum segments, from the script parameters."""
+    max_angle = rm_parameter("ElbowMaxAngle", MAX_SEGMENT_ANGLE)
+    min_segments = rm_parameter("ElbowMinSegments", MIN_SEGMENTS)
+    if not 0 < max_angle <= 90:
+        raise ValueError("ElbowMaxAngle must be more than 0 and at most 90 degrees")
+    if min_segments < 1 or min_segments != int(min_segments):
+        raise ValueError("ElbowMinSegments must be a whole number, at least 1")
+    return max_angle, int(min_segments)
+
+
+def rm_pieces(design, elbow, settings):
     """The rest of the body and the mitred segments, with their expected volumes."""
     frame, major, radii = elbow["frame"], elbow["major"], elbow["radii"]
     start, sweep = elbow["start"], elbow["sweep"]
-    count = rm_segment_count(sweep, MAX_SEGMENT_ANGLE, MIN_SEGMENTS)
+    count = rm_segment_count(sweep, *settings)
     bend, _ = rm_bend_volumes(sweep, major, radii, count)
     area = rm_pipe_area(radii)
 
@@ -256,7 +269,7 @@ def rm_check_report(part, elbow, pieces):
     return "\n".join(lines)
 
 
-def rm_replace(design, elbow):
+def rm_replace(design, elbow, settings):
     """Replace one bend of a design body.
 
     DesignBody.Shape is read-only, so the result is made of new bodies with the same
@@ -266,7 +279,7 @@ def rm_replace(design, elbow):
     the volume change relative to the bend and whether the bodies were merged.
     """
     part, name = design.Parent, rm_name(design)
-    pieces, count = rm_pieces(design, elbow)
+    pieces, count = rm_pieces(design, elbow, settings)
     bend, mitred = rm_bend_volumes(
         elbow["sweep"], elbow["major"], elbow["radii"], count
     )
@@ -312,6 +325,11 @@ def rm_holder(bodies, elbow):
 
 
 def rm_replace_elbows():
+    try:
+        settings = rm_settings()
+    except ValueError as exc:
+        rm_message("Script parameter: %s." % exc)
+        return
     found, problems = [], []
     for item in Selection.GetActive().Items:
         try:
@@ -340,7 +358,7 @@ def rm_replace_elbows():
             continue
         name = rm_name(design)
         try:
-            bodies, count, change, merged = rm_replace(design, elbow)
+            bodies, count, change, merged = rm_replace(design, elbow, settings)
         except Exception as exc:
             lines.append("%s: not replaced, %s." % (name, exc))
             continue
@@ -358,7 +376,13 @@ def rm_replace_elbows():
                 "merged" if merged else "%d separate bodies" % len(bodies),
             )
         )
-    rm_message("\n".join(lines + problems))
+    rm_message(
+        "\n".join(
+            lines
+            + problems
+            + ["(At most %.4g deg per segment, at least %d segments.)" % settings]
+        )
+    )
 
 
 rm_replace_elbows()

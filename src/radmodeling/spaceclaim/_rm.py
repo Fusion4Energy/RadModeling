@@ -41,6 +41,21 @@ def rm_name(obj):
     return ""
 
 
+def rm_parameter(name, default):
+    """Number in the script parameter ``name`` of the document (Groups panel >
+    Script Parameters), or default if there is none."""
+    try:
+        value = getattr(Parameters, name)
+    except Exception:  # no such parameter, or no Parameters at all
+        return default
+    for getter in (lambda v: v, lambda v: v.Value):
+        try:
+            return float(getter(value))
+        except Exception:
+            pass
+    return default
+
+
 def rm_tag(name):
     match = RM_TAG.search(name or "")
     return int(match.group(1)) if match else None
