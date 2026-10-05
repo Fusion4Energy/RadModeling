@@ -78,11 +78,6 @@ selected instance recovers its original volume, within half of `VolumeTolerance`
 Choose materials from a list to show only their components. `(no material)` shows
 the components that still need one.
 
-### Highlight problems
-
-Colours in red the components listed in the JSON written by
-`radmod check --highlight`.
-
 ### Replace elbows
 
 Select a torus face of each pipe bend and run it: the bend is replaced by mitred

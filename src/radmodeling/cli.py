@@ -143,7 +143,10 @@ def check(
     ] = 1.0,
     highlight: Annotated[
         Path | None,
-        typer.Option(help="Write the IDs with problems as JSON for the CAD adapters."),
+        typer.Option(
+            help="Write the IDs with problems as JSON for the CAD adapters.",
+            hidden=True,
+        ),
     ] = None,
 ) -> None:
     """Compare a simplified model with the registry and diagnose its geometry.
@@ -232,7 +235,6 @@ def check(
     )
     if highlight:
         highlight.write_text(json.dumps(issues, indent=1))
-        console.print(f"Problems written to {esc(str(highlight))}")
 
 
 @app.command()

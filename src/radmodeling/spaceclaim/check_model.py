@@ -6,6 +6,7 @@
 # tolerance is the VolumeTolerance script parameter (1 % by default).
 import json
 import os
+import tempfile
 
 
 def rm_check_model():
@@ -24,33 +25,35 @@ def rm_check_model():
         return
     stem = os.path.splitext(path)[0]
     step = stem + "_check.step"
-    problems = stem + "_check_problems.json"
 
     DocumentSave.Execute(step, ExportOptions.Create())
     if document.Path != path:
         rm_message(
             "SpaceClaim now points to the STEP copy: save your work as .scdocx again."
         )
-    if os.path.exists(problems):
+    handle, problems = tempfile.mkstemp(suffix=".json")
+    os.close(handle)
+    try:
+        code, output = rm_run_radmod(
+            [
+                "check",
+                step,
+                "--registry",
+                registry,
+                "--highlight",
+                problems,
+                "--tolerance",
+                "%g" % tolerance,
+            ]
+        )
+        # radmod only writes the file when the check ran: an empty one means it failed
+        if code != 0 or not os.path.getsize(problems):
+            rm_message("radmod check failed:\n\n" + output)
+            return
+        with open(problems) as infile:
+            rm_highlight(json.load(infile))
+    finally:
         os.remove(problems)
-
-    code, output = rm_run_radmod(
-        [
-            "check",
-            step,
-            "--registry",
-            registry,
-            "--highlight",
-            problems,
-            "--tolerance",
-            "%g" % tolerance,
-        ]
-    )
-    if code != 0 or not os.path.exists(problems):
-        rm_message("radmod check failed:\n\n" + output)
-        return
-    with open(problems) as infile:
-        rm_highlight(json.load(infile))
     rm_message(output + "\nComponents with problems are in red.")
 
 

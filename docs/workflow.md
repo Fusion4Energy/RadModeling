@@ -109,9 +109,7 @@ Reports the instances beyond the volume tolerance, and the geometry that will ca
 trouble in the conversion: surfaces a CSG converter cannot translate (splines, offset
 surfaces...), tori and invalid solids. It also lists deleted instances, extra
 instances (copies of a component), moved components, new components (tags not in the
-registry yet) and untagged parts. `--highlight problems.json` writes the IDs per
-problem for the [*Highlight problems*](spaceclaim.md#highlight-problems) SpaceClaim
-tool.
+registry yet) and untagged parts.
 
 To get rid of the tori of pipe elbows, use the
 [*Replace elbows*](spaceclaim.md#replace-elbows) SpaceClaim tool.
