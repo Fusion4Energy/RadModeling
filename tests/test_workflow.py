@@ -364,6 +364,23 @@ def test_assign_materials(library_file):
     assert cell(model, 6).material == 0  # untagged cells are left alone
 
 
+def test_assign_materials_void(library_file):
+    # Void ignores case and spaces, needs no library entry or density, and
+    # replaces any material the cell already had
+    registry = make_registry()
+    registry[4, 1].material = "  VOID "
+    registry[4, 1].density_g_cm3 = None
+    model = migjorn.parse(models.mcnp_text())
+    cell(model, 4).material = 5
+    cell(model, 4).density = -3.0
+    report = assign_materials(model, registry, MaterialLibrary.load(library_file))
+    assert cell(model, 4).material == 0
+    assert cell(model, 4).density is None
+    assert report.void_components == 1
+    assert "void" not in {name.lower() for name in report.cells_per_material}
+    assert "void" not in {name.lower() for name in report.mass_per_material_g}
+
+
 @pytest.mark.parametrize(
     ("mcnp_volume", "std", "applied"),
     [

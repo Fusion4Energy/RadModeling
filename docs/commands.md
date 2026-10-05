@@ -60,7 +60,8 @@ radmod materials MODEL.mcnp -r REGISTRY -l LIBRARY.toml
 
 Materials, densities and density correction factors in the tagged cells.
 Corrections closer to 1 than `--dcf-min` (0.1 %) or than three times their
-uncertainty are not applied.
+uncertainty are not applied. Components whose material is `void` (any case) get
+material 0 and no density in all their cells; they need no library entry.
 
 ### slice
 
