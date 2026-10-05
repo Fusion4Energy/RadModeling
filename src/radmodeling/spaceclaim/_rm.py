@@ -35,7 +35,11 @@ def rm_message(text):
 
 
 def rm_name(obj):
-    for getter in (lambda o: o.GetName(), lambda o: o.Name):
+    for getter in (
+        lambda o: o.GetName(),
+        lambda o: o.Name,
+        lambda o: o.DisplayName,
+    ):
         try:
             name = getter(obj)
             if name:
@@ -83,27 +87,21 @@ def rm_tag(name):
     return int(match.group(1)) if match else None
 
 
-def rm_component_id(component):
-    """Tag of the component or of its closest tagged ancestor."""
-    while component is not None:
-        tag = rm_tag(rm_name(component))
-        if tag is not None:
-            return tag
-        try:
-            component = component.Parent.Parent  # Component -> Part -> Component
-        except AttributeError:
-            return None
-    return None
-
-
 def rm_body_id(body):
-    tag = rm_tag(rm_name(body))
-    if tag is not None:
-        return tag
-    try:
-        return rm_component_id(body.Parent.Parent)
-    except AttributeError:
-        return None
+    """Tag of the body or of its closest tagged ancestor.
+
+    Single-solid parts imported from STEP carry the tag on the body, but the bodies
+    of multi-solid parts are unnamed: their tag is only on the part or component.
+    """
+    obj = body
+    while obj is not None:
+        for attribute in (None, "Master", "Template"):
+            named = getattr(obj, attribute, None) if attribute else obj
+            tag = rm_tag(rm_name(named))
+            if tag is not None:
+                return tag
+        obj = getattr(obj, "Parent", None)
+    return None
 
 
 def rm_all_bodies():
