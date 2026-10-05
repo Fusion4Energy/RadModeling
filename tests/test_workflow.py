@@ -547,18 +547,18 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
         component.material = material
     reg.save(registry)
 
-    tagged = cad_model.with_name("machine_tagged.step")
+    simplified = cad_model.with_name("machine_simplified.step")
     # The registry is found next to the model: no -r needed
     problems = tmp_path / "h.json"
-    output = run("check", tagged, "--highlight", problems)
+    output = run("check", simplified, "--highlight", problems)
     assert "Problems written" not in output
     # The interface of the SpaceClaim 'Check model' tool: IDs per category
     assert json.loads(problems.read_text())["volume"] == []
     assert f"Registry: {registry}" in output.replace("\n", "")
     assert "Instances beyond volume tolerance: 0" in output
 
-    exported = tmp_path / "export.step"
-    run("export", tagged, "-o", exported)
+    run("export", simplified)
+    exported = cad_model.with_name("machine_for_conversion.step")
     mcnp = tmp_path / "model.mcnp"
     # Renumbering the cells does not lose track of the components
     model = migjorn.parse(models.mcnp_text())
@@ -611,6 +611,10 @@ def test_registry_is_found_only_when_unambiguous(tmp_path, monkeypatch):
 
     assert run("init", step).exit_code == 0
     registry = model / "machine_registry.csv"
+    # init does not overwrite the model being simplified
+    result = run("init", step, "-r", tmp_path / "new_registry.csv")
+    assert result.exit_code == 1
+    assert "machine_simplified.step already exists" in result.output.replace("\n", "")
     assert run("check", step).exit_code == 0
 
     (model / "other_registry.csv").write_bytes(registry.read_bytes())

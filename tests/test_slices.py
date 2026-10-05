@@ -71,7 +71,7 @@ def test_atlas(tmp_path, cad_model):
 
     run("init", cad_model)
     exported = tmp_path / "export.step"
-    run("export", cad_model.with_name("machine_tagged.step"), "-o", exported)
+    run("export", cad_model.with_name("machine_simplified.step"), "-o", exported)
     mcnp = tmp_path / "model.mcnp"
     mcnp.write_text(models.mcnp_text(ball_radius=2.6))  # the ball is too big
     report = tmp_path / "compare.csv"

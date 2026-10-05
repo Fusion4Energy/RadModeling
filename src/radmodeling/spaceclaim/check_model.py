@@ -1,9 +1,10 @@
 # RadModeling: run 'radmod check' on the open document without leaving SpaceClaim.
 #
-# Saves a STEP copy next to the document (<name>_check.step), runs 'radmod check' on it
-# with the registry, shows its report and colours the components with problems in
-# red. The document itself is not changed and stays the working file. The volume
-# tolerance is the VolumeTolerance script parameter (1 % by default).
+# Saves a STEP copy next to the document (<name>.step, replacing the previous copy),
+# runs 'radmod check' on it with the registry, shows its report and colours the
+# components with problems in red. The document itself is not changed and stays the
+# working file. The volume tolerance is the VolumeTolerance script parameter (1 % by
+# default).
 import json
 import os
 import tempfile
@@ -24,7 +25,7 @@ def rm_check_model():
     if not registry:
         return
     stem = os.path.splitext(path)[0]
-    step = stem + "_check.step"
+    step = stem + ".step"
 
     DocumentSave.Execute(step, ExportOptions.Create())
     if document.Path != path:

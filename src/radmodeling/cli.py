@@ -98,7 +98,13 @@ def _keys_text(keys) -> str:
 @app.command()
 def init(
     original: Annotated[Path, typer.Argument(help="Original STEP model.")],
-    tagged: Annotated[Path | None, typer.Option(help="Tagged STEP to write.")] = None,
+    simplified: Annotated[
+        Path | None,
+        typer.Option(
+            help="Tagged STEP to write, the one to simplify. "
+            "Default: ORIGINAL_simplified.step."
+        ),
+    ] = None,
     registry: Annotated[
         Path | None, typer.Option("--registry", "-r", help="Registry CSV to write.")
     ] = None,
@@ -106,31 +112,33 @@ def init(
         bool, typer.Option(help="Make every solid its own component.")
     ] = False,
     force: Annotated[
-        bool, typer.Option(help="Overwrite an existing registry.")
+        bool, typer.Option(help="Overwrite an existing registry and model.")
     ] = False,
 ) -> None:
     """Tag every part with a unique ID and create the registry.
 
     All the instances of a part share its tag and stay linked, and each instance gets
-    its own row in the registry. Simplify the tagged STEP in any CAD program. The
+    its own row in the registry. Simplify the written STEP in any CAD program. The
     \\[rmID] tags in the component names must be kept; everything else (names,
     hierarchy) can change freely.
     """
     from radmodeling import workflow
 
-    tagged = tagged or original.with_name(f"{original.stem}_tagged.step")
+    simplified = simplified or original.with_name(f"{original.stem}_simplified.step")
     registry = registry or original.with_name(f"{original.stem}_registry.csv")
-    if registry.exists() and not force:
-        _fail(f"{registry} already exists. Use --force to overwrite it.")
+    for path in (registry, simplified):
+        if path.exists() and not force:
+            _fail(f"{path} already exists. Use --force to overwrite it.")
     with console.status("Reading and tagging the model..."):
-        result = workflow.init(original, tagged, registry, per_solid=per_solid)
+        result = workflow.init(original, simplified, registry, per_solid=per_solid)
     total = sum(c.original_volume_cm3 or 0 for c in result)
     console.print(
         f"[green]Tagged {len(result.ids)} components[/] with {len(result)} instances "
         f"({total:.6g} cm3).\n"
-        f"  Tagged model: {esc(str(tagged))}\n  Registry:     {esc(str(registry))}\n"
+        f"  Model to simplify: {esc(str(simplified))}\n"
+        f"  Registry:          {esc(str(registry))}\n"
         "Fill the 'material' column (and density or mass) of the registry, then "
-        "simplify the tagged model."
+        "simplify the model."
     )
 
 
@@ -241,8 +249,14 @@ def check(
 def export(
     simplified: Annotated[Path, typer.Argument(help="Simplified STEP model.")],
     output: Annotated[
-        Path, typer.Option("--output", "-o", help="STEP file to convert to MCNP.")
-    ],
+        Path | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="STEP file to convert to MCNP. Default: NAME_for_conversion.step "
+            "next to NAME_registry.csv.",
+        ),
+    ] = None,
     registry: RegistryOption = None,
 ) -> None:
     """Write the STEP file for the CAD-to-MCNP converter.
@@ -259,6 +273,9 @@ def export(
     assert registry is not None
     _writable(registry)
     reg = Registry.load(registry)
+    if output is None:
+        base = registry.name[: -len(REGISTRY_SUFFIX)]
+        output = registry.with_name(f"{base}_for_conversion.step")
     with console.status("Exporting..."):
         result = workflow.export(simplified, reg, output)
     reg.save(registry)

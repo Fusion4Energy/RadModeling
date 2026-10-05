@@ -21,7 +21,8 @@ skips the update.
 radmod init ORIGINAL.step
 ```
 
-Tag the components and create the registry. See
+Tag the components and create the registry: writes `ORIGINAL_simplified.step`, the
+model to simplify, and `ORIGINAL_registry.csv`. See
 [CAD to MCNP workflow](workflow.md).
 
 ### check
@@ -35,17 +36,18 @@ Volume deviations and geometry diagnostics of a simplified model.
 ### export
 
 ```bash
-radmod export SIMPLIFIED.step -r REGISTRY -o OUT.step
+radmod export SIMPLIFIED.step -r REGISTRY
 ```
 
-STEP file for the CAD-to-MCNP converter, each solid named with its registry row
+STEP file for the CAD-to-MCNP converter (`NAME_for_conversion.step` next to
+`NAME_registry.csv`, or `-o`), each solid named with its registry row
 (`[rm12.3] Bolt`). The converter copies the names into the cell comments, which is
 how `compare`, `materials` and `slice` find the cells of each component.
 
 ### compare
 
 ```bash
-radmod compare OUT.step MODEL.mcnp
+radmod compare FOR_CONVERSION.step MODEL.mcnp
 ```
 
 CAD vs MCNP volumes and discrepancies per instance. `--components 3,7.2` limits it
@@ -76,7 +78,7 @@ is the centre of the image; `--step` overlays the CAD and, with the STEP file fr
 ### atlas
 
 ```bash
-radmod atlas MODEL.mcnp --step OUT.step -o ATLAS.pdf
+radmod atlas MODEL.mcnp --step FOR_CONVERSION.step -o ATLAS.pdf
 ```
 
 PDF with a summary of the problems of every slice, evenly spaced slices across the

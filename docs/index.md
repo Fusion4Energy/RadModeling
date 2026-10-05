@@ -26,12 +26,12 @@ MCNP geometry obtained from them. It is a Python package with a command line too
 `radmod`, plus a few thin SpaceClaim tools for the interactive part of the work.
 
 ```text
-original.step ──radmod init──▶ tagged.step + registry.csv
+machine.step ──radmod init──▶ machine_simplified.step + machine_registry.csv
                                    │
                     simplify in SpaceClaim (or any CAD program)
                                    │
-simplified.step ──radmod check──▶ volume deviations, tori, splines, invalid solids
-                ──radmod export─▶ for_conversion.step
+machine_simplified.step ──radmod check──▶ volumes, tori, splines, invalid solids
+                        ──radmod export─▶ machine_for_conversion.step
                                    │
                          GEOUNED (or another converter)
                                    │

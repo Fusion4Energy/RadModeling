@@ -7,13 +7,23 @@ icon: lucide/workflow
 This page follows a model from the original CAD to a checked MCNP input. Every step is
 a `radmod` command; `radmod <command> --help` lists all the options.
 
+A model goes through three STEP files, all named after the original:
+
+| File                          | Role                                                     |
+| ----------------------------- | -------------------------------------------------------- |
+| `machine.step`                | The original CAD, never changed.                         |
+| `machine_simplified.step`     | The model being simplified, written tagged by `init`.    |
+| `machine_for_conversion.step` | The input of the converter, written by `export`.         |
+
+Next to them, `machine_registry.csv` keeps the materials and the original volumes.
+
 ## 1. Tag the original model
 
 ```bash
 radmod init machine.step
 ```
 
-This writes `machine_tagged.step` and `machine_registry.csv`. Every component (every
+This writes `machine_simplified.step` and `machine_registry.csv`. Every component (every
 part of the assembly that holds solids) gets a unique ID in its name, for example
 `Pump casing [rm12]`.
 
@@ -66,7 +76,8 @@ back by Excel with semicolons, decimal commas or Windows encodings are read fine
 
 ## 3. Simplify
 
-Simplify `machine_tagged.step` in SpaceClaim or any other CAD program. The only rule
+Simplify `machine_simplified.step` in SpaceClaim or any other CAD program (in
+SpaceClaim, save it as `machine_simplified.scdocx`). The only rule
 is to **keep the `[rmID]` tags in the component names**; renaming the rest, moving
 components in the tree, splitting or merging bodies within a component are all fine.
 The [SpaceClaim tools](spaceclaim.md) help along the way: colour the components whose
@@ -95,15 +106,17 @@ instance and a single body are matched anyway and reported as moved.
 ## 4. Check the simplified model
 
 ```bash
-radmod check simplified.step -r machine_registry.csv --tolerance 1
+radmod check machine_simplified.step -r machine_registry.csv --tolerance 1
 ```
 
 `-r` can be left out when `machine_registry.csv` is the only registry next to the
 model or in the current folder: every command finds it and prints which one it used.
 
-`radmod` reads STEP files, not SpaceClaim's `.scdocx`. Export a STEP copy to check
-it, or use the [*Check model*](spaceclaim.md#check-model) SpaceClaim tool, which does
-the export and the check in one click.
+`radmod` reads STEP files, not SpaceClaim's `.scdocx`. Save a STEP copy of the
+document over `machine_simplified.step` to check it, or use the
+[*Check model*](spaceclaim.md#check-model) SpaceClaim tool, which does both in one
+click. The STEP written by `init` is not needed once the work has started: the
+registry keeps the original volumes and positions.
 
 Reports the instances beyond the volume tolerance, and the geometry that will cause
 trouble in the conversion: surfaces a CSG converter cannot translate (splines, offset
@@ -117,14 +130,15 @@ To get rid of the tori of pipe elbows, use the
 ## 5. Export for the conversion
 
 ```bash
-radmod export simplified.step -r machine_registry.csv -o for_conversion.step
+radmod export machine_simplified.step -r machine_registry.csv
 ```
 
 Writes every solid as its own product, sorted by component ID and instance, and named
 with both: `[rm12.3] Bolt` is instance 3 of component 12. Unlike the component tags,
 which `init` puts at the end of the names, these tags come first: some converters cut
 or drop the end of long names. Instances are unlinked here, as converters need every
-solid on its own. Convert `for_conversion.step` with GEOUNED or similar.
+solid on its own. The output is `machine_for_conversion.step`, named after the
+registry (`-o` writes it elsewhere). Convert it with GEOUNED or similar.
 
 The converter copies the name of each solid into a comment on its cell. GEOUNED
 writes the CAD path of the solid:
@@ -132,7 +146,7 @@ writes the CAD path of the solid:
 ```text
 103   10  -7.9300000 -11 12
            imp:n=1.0   imp:p=1.0
-           $/for_conversion/[rm12.3] Bolt1
+           $/machine_for_conversion/[rm12.3] Bolt1
 ```
 
 This tag is the link between the cell and its registry row. It stays with the cell
@@ -145,7 +159,7 @@ the converter has an option for it, and convert the STEP file as written by
 ## 6. Compare CAD and MCNP
 
 ```bash
-radmod compare for_conversion.step model.mcnp -r machine_registry.csv \
+radmod compare machine_for_conversion.step model.mcnp -r machine_registry.csv \
     --report compare.csv
 ```
 
@@ -207,7 +221,7 @@ have no card in the input yet.
 
 ```bash
 radmod slice model_materials.mcnp -o slice.png --normal z --origin 0,0,120 \
-    --width 400 --step for_conversion.step
+    --width 400 --step machine_for_conversion.step
 ```
 
 Plots the MCNP cells coloured by material with the CAD section on top. Regions in no
@@ -218,7 +232,7 @@ slice covers the whole CAD model.
 For a document that covers the whole model, write an atlas:
 
 ```bash
-radmod atlas model_materials.mcnp --step for_conversion.step -o atlas.pdf \
+radmod atlas model_materials.mcnp --step machine_for_conversion.step -o atlas.pdf \
     --planes x:3,y:3,z:6 --report compare.csv --worst 20
 ```
 

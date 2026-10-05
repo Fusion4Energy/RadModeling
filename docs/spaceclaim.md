@@ -43,9 +43,10 @@ material.
 ### Check model
 
 Runs `radmod check` on the open document without leaving SpaceClaim: saves a STEP
-copy next to it (`<name>_check.step`), checks it against the registry, shows the
-report and colours the components with problems in red. The document is not changed,
-so the `.scdocx` stays the working file. The registry must not be open in Excel, as
+copy next to it with the same name (`machine_simplified.scdocx` →
+`machine_simplified.step`, replacing the previous copy), checks it against the
+registry, shows the report and colours the components with problems in red. The
+document is not changed, so the `.scdocx` stays the working file. The registry must not be open in Excel, as
 the check updates it. SpaceClaim waits while the check runs. The volume tolerance is
 `VolumeTolerance` (passed as `--tolerance`).
 

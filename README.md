@@ -14,12 +14,12 @@ MCNP geometry obtained from them. It is a Python package with a command line too
 `radmod`, plus a few thin SpaceClaim tools for the interactive part of the work.
 
 ```
-original.step ──radmod init──▶ tagged.step + registry.csv
+machine.step ──radmod init──▶ machine_simplified.step + machine_registry.csv
                                    │
                     simplify in SpaceClaim (or any CAD program)
                                    │
-simplified.step ──radmod check──▶ volume deviations, tori, splines, invalid solids
-                ──radmod export─▶ for_conversion.step
+machine_simplified.step ──radmod check──▶ volumes, tori, splines, invalid solids
+                        ──radmod export─▶ machine_for_conversion.step
                                    │
                          GEOUNED (or another converter)
                                    │
@@ -62,14 +62,14 @@ pip install -e ".[dev]"
 ```bash
 radmod init machine.step                       # tag + registry
 # fill the 'material' column of machine_registry.csv
-# simplify machine_tagged.step in SpaceClaim, export simplified.step
-radmod check simplified.step -r machine_registry.csv
-radmod export simplified.step -r machine_registry.csv -o for_conversion.step
-# convert for_conversion.step to model.mcnp with GEOUNED
-radmod compare for_conversion.step model.mcnp -r machine_registry.csv
+# simplify machine_simplified.step in SpaceClaim, save it back as STEP
+radmod check machine_simplified.step -r machine_registry.csv
+radmod export machine_simplified.step -r machine_registry.csv
+# convert machine_for_conversion.step to model.mcnp with GEOUNED
+radmod compare machine_for_conversion.step model.mcnp -r machine_registry.csv
 radmod materials model.mcnp -r machine_registry.csv -l materials.toml
-radmod slice model_materials.mcnp -o slice.png --normal z --step for_conversion.step
-radmod atlas model_materials.mcnp --step for_conversion.step -o atlas.pdf --report compare.csv
+radmod slice model_materials.mcnp -o slice.png --normal z --step machine_for_conversion.step
+radmod atlas model_materials.mcnp --step machine_for_conversion.step -o atlas.pdf --report compare.csv
 ```
 
 SpaceClaim tools: `radmod spaceclaim-loaders <folder>` and publish the loaders once.
