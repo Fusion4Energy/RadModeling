@@ -1,5 +1,6 @@
 import json
 import math
+import os
 from pathlib import Path
 
 import migjorn
@@ -679,3 +680,30 @@ def test_python_dash_m_entry_point(module):
     )
     assert f"python -m {module}" in result.stdout
     assert "spaceclaim-loaders" in result.stdout
+
+
+def test_check_warns_when_the_document_is_newer(tmp_path):
+    from typer.testing import CliRunner
+
+    from radmodeling.cli import app
+
+    runner = CliRunner()
+
+    def run(*args):
+        result = runner.invoke(app, [str(a) for a in args])
+        assert result.exit_code == 0, result.output
+        return result.output.replace("\n", " ")
+
+    step = models.write_cad(tmp_path / "machine.step")
+    run("init", step)
+    simplified = tmp_path / "machine_simplified.step"
+    assert "Warning" not in run("check", simplified)
+
+    document = simplified.with_suffix(".scdocx")
+    document.write_text("SpaceClaim document")
+    saved = simplified.stat().st_mtime
+    os.utime(document, (saved + 10, saved + 10))
+    assert "was saved after machine_simplified.step" in run("check", simplified)
+
+    os.utime(simplified, (saved + 20, saved + 20))
+    assert "Warning" not in run("check", simplified)

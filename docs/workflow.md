@@ -116,13 +116,18 @@ model or in the current folder: every command finds it and prints which one it u
 document over `machine_simplified.step` to check it, or use the
 [*Check model*](spaceclaim.md#check-model) SpaceClaim tool, which does both in one
 click. The STEP written by `init` is not needed once the work has started: the
-registry keeps the original volumes and positions.
+registry keeps the original volumes and positions. `check` and `export` warn when a `.scdocx` of the same name was saved after the STEP file, as they would read an older
+model.
 
 Reports the instances beyond the volume tolerance, and the geometry that will cause
 trouble in the conversion: surfaces a CSG converter cannot translate (splines, offset
 surfaces...), tori and invalid solids. It also lists deleted instances, extra
 instances (copies of a component), moved components, new components (tags not in the
 registry yet) and untagged parts.
+
+Differences of about 0.1 % in parts nobody has touched may occur: the CAD program
+rebuilds the geometry when it imports and exports a STEP (surface types, tolerances),
+and that can slightly change the computed volume.
 
 To get rid of the tori of pipe elbows, use the
 [*Replace elbows*](spaceclaim.md#replace-elbows) SpaceClaim tool.

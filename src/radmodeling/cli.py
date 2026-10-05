@@ -82,6 +82,21 @@ def _writable(path: Path) -> None:
         _fail(f"cannot write {path}: close it in Excel (or any other program)")
 
 
+def _warn_if_stale(step: Path) -> None:
+    """Warn when the CAD document the STEP was saved from has changed since."""
+    document = step.with_suffix(".scdocx")
+    if (
+        step.exists()
+        and document.exists()
+        and document.stat().st_mtime > step.stat().st_mtime
+    ):
+        console.print(
+            f"[yellow]Warning:[/] {esc(document.name)} was saved after "
+            f"{esc(step.name)}: save a STEP copy of it first, or this is an older "
+            "version of the model."
+        )
+
+
 def _ids(text: str | None) -> list[int] | None:
     if not text:
         return None
@@ -164,6 +179,7 @@ def check(
     from radmodeling import workflow
     from radmodeling.registry import Registry
 
+    _warn_if_stale(simplified)
     registry = _registry(registry, [simplified])
     assert registry is not None
     _writable(registry)
@@ -269,6 +285,7 @@ def export(
     from radmodeling import workflow
     from radmodeling.registry import Registry
 
+    _warn_if_stale(simplified)
     registry = _registry(registry, [simplified])
     assert registry is not None
     _writable(registry)
