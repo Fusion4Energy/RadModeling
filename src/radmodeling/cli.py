@@ -43,7 +43,7 @@ REGISTRY_SUFFIX = "_registry.csv"
 # Issues of 'check' worth a look but not necessarily wrong: printed in yellow and
 # coloured yellow by the CAD adapters, the other issues in red. Tori are fine in MCNP
 # with their axis along X, Y or Z; components are often moved or deleted on purpose;
-# new components are added to the registry on export.
+# new components are added to the registry by 'check' itself.
 WARNINGS = {"torus", "moved", "deleted", "new"}
 
 
@@ -259,7 +259,7 @@ def check(
     line(
         "New components",
         issues["new"],
-        "(tags not in the registry yet: added on export)",
+        "(tags not in the registry yet: added with status 'new', fill their material)",
         "new",
     )
     untagged = [i.name for i in matching.untagged]

@@ -56,7 +56,7 @@ def rm_tag_new_components():
         return
     rm_message(
         "Tagged %d components: [rm%d] to [rm%d].\n"
-        "'radmod export' adds them to the registry: give them a material then."
+        "Check model adds them to the registry: give them a material then."
         % (next_id - first, first, next_id - 1)
     )
 

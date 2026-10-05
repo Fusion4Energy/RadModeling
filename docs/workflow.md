@@ -89,8 +89,8 @@ simplification. Making one independent is fine: it keeps its tag and its row.
 **Tag the parts you add.** Run the
 [*Tag new components*](spaceclaim.md#tag-new-components) SpaceClaim tool after adding
 parts, or write a tag with an unused number yourself, such as `Shield [rm90]`.
-`export` adds tags that are not in the registry yet as new components with status
-`new`; give them a material then. Parts left untagged also get an ID on export, but
+`check` adds tags that are not in the registry yet as new components with status
+`new`; give them a material then. Parts left untagged only get an ID on export, and
 that ID only exists in the registry: the next export would add them again, so tag
 them before exporting.
 
@@ -123,7 +123,7 @@ Reports the instances beyond the volume tolerance, and the geometry that will ca
 trouble in the conversion: surfaces a CSG converter cannot translate (splines, offset
 surfaces...), tori and invalid solids. It also lists deleted instances, extra
 instances (copies of a component), moved components, new components (tags not in the
-registry yet) and untagged parts.
+registry yet, which it adds with status `new`) and untagged parts.
 
 Differences of about 0.1 % in parts nobody has touched may occur: the CAD program
 rebuilds the geometry when it imports and exports a STEP (surface types, tolerances),

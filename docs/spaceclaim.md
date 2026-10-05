@@ -48,8 +48,8 @@ copy next to it with the same name (`machine_simplified.scdocx` →
 registry, shows the report and colours the components with problems in red. Those
 with only warnings are yellow: tori (fine in MCNP with their axis along X, Y or Z),
 moved components (which may be moved on purpose), components with deleted instances
-(the instances left are coloured) and new components (added to the registry on
-export). The document is not changed, so the `.scdocx` stays the working file. The
+(the instances left are coloured) and new components (just added to the registry
+with status `new`). The document is not changed, so the `.scdocx` stays the working file. The
 registry must not be open in Excel, as the check updates it. SpaceClaim waits while the check runs. The volume tolerance is
 `VolumeTolerance` (passed as `--tolerance`).
 
@@ -62,8 +62,8 @@ Gives the next free `[rmN]` tags to the components added after `radmod init`. Se
 bodies or faces to tag only their components; with nothing selected, all the untagged
 bodies are tagged. A component and all the linked instances of a part get a single
 tag; bodies directly in the root part are tagged themselves. The new IDs come after
-those of the registry and of the document, and `radmod export` adds them to the
-registry.
+those of the registry and of the document, and *Check model* (or `radmod check`)
+adds them to the registry.
 
 ### Check volumes
 

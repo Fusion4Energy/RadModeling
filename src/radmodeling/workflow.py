@@ -248,6 +248,24 @@ def _far(row: Component, instance: Instance) -> bool:
     return bool(distance > row.original_volume_cm3 ** (1 / 3))
 
 
+def _add_new_components(matching: Matching, registry: Registry) -> list[Key]:
+    """Add rows with status ``new`` for the tags that are not in the registry yet.
+
+    The instances become found, so matching again finds the rows instead of adding
+    them twice. Returns the keys added.
+    """
+    added = []
+    counts: Counter[int] = Counter()
+    for instance in matching.new:
+        assert instance.id is not None
+        counts[instance.id] += 1
+        key = Key(instance.id, counts[instance.id])
+        registry.add(_new_component(key, instance, status="new"))
+        matching.found[key] = instance
+        added.append(key)
+    return added
+
+
 def _new_component(key: Key, instance: Instance, **values) -> Component:
     x, y, z = instance.centre_cm or (None, None, None)
     return Component(
@@ -378,9 +396,15 @@ def check(
     tolerance_pct: float = 1.0,
     analyse_geometry: bool = True,
 ) -> CheckResult:
-    """Match a simplified model with the registry and update the simplified volumes."""
+    """Match a simplified model with the registry and update the simplified volumes.
+
+    Tags that are not in the registry yet are added as new components (status
+    ``new``), so they can get a material before the export. Copies and untagged parts
+    are only added by :func:`export`.
+    """
     instances = find_instances(read_model(simplified_step), Measurer(analyse_geometry))
     matching = match_instances(instances, registry)
+    _add_new_components(matching, registry)
     for component in registry:
         instance = matching.found.get(component.key)
         if instance is None:
@@ -432,16 +456,8 @@ def export(
         find_instances(read_model(simplified_step), Measurer(analyse_geometry=False)),
         registry,
     )
+    added = _add_new_components(matching, registry)
     found = dict(matching.found)
-    added = []
-    counts: Counter[int] = Counter()
-    for instance in matching.new:
-        assert instance.id is not None
-        counts[instance.id] += 1
-        key = Key(instance.id, counts[instance.id])
-        registry.add(_new_component(key, instance, status="new"))
-        found[key] = instance
-        added.append(key)
 
     for instance in matching.extra:
         assert instance.id is not None

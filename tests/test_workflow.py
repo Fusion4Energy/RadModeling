@@ -229,7 +229,8 @@ def test_tagged_assemblies_are_instances(tmp_path):
 
 
 def test_new_tags_become_new_components(tmp_path, cad_model):
-    """A tag written in the CAD after init adds a component, only once."""
+    """A tag written in the CAD after init adds a component, only once: on check, or
+    on export for a model that was not checked."""
     tagged, registry_csv = tmp_path / "tagged.step", tmp_path / "registry.csv"
     workflow.init(cad_model, tagged, registry_csv)
     shield = models.cylinder(300, 0, 0, 10, 10)
@@ -240,9 +241,15 @@ def test_new_tags_become_new_components(tmp_path, cad_model):
     simplified = tmp_path / "simplified.step"
     write_step(parts, simplified)
 
-    result = workflow.check(simplified, Registry.load(registry_csv))
+    registry = Registry.load(registry_csv)
+    result = workflow.check(simplified, registry)
     assert [i.id for i in result.matching.new] == [9, 9]
     assert result.matching.missing == []
+    assert [c.status for c in registry.instances(9)] == ["new", "new"]
+    assert registry[9, 1].simplified_volume_cm3 == pytest.approx(
+        result.matching.found[Key(9, 1)].volume_cm3
+    )
+    assert workflow.check(simplified, registry).matching.new == []
 
     for run in range(2):
         registry = Registry.load(registry_csv)
