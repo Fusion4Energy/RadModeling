@@ -2,9 +2,10 @@
 #
 # Saves a STEP copy next to the document (<name>.step, replacing the previous copy),
 # runs 'radmod check' on it with the registry, shows its report and colours the
-# components with problems in red. The document itself is not changed and stays the
-# working file. The volume tolerance is the VolumeTolerance script parameter (1 % by
-# default).
+# components with problems in red, and in yellow those with only warnings (tori,
+# moved, deleted instances, new).
+# The document itself is not changed and stays the working file. The volume tolerance
+# is the VolumeTolerance script parameter (1 % by default).
 import json
 import os
 import tempfile
@@ -55,7 +56,9 @@ def rm_check_model():
             rm_highlight(json.load(infile))
     finally:
         os.remove(problems)
-    rm_message(output + "\nComponents with problems are in red.")
+    rm_message(
+        output + "\nComponents with problems are in red, with only warnings in yellow."
+    )
 
 
 rm_check_model()

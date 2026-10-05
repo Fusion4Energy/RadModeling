@@ -40,6 +40,11 @@ def _fail(message: str) -> NoReturn:
 
 
 REGISTRY_SUFFIX = "_registry.csv"
+# Issues of 'check' worth a look but not necessarily wrong: printed in yellow and
+# coloured yellow by the CAD adapters, the other issues in red. Tori are fine in MCNP
+# with their axis along X, Y or Z; components are often moved or deleted on purpose;
+# new components are added to the registry on export.
+WARNINGS = {"torus", "moved", "deleted", "new"}
 
 
 def _registry_candidates(near: list[Path]) -> list[Path]:
@@ -167,7 +172,8 @@ def check(
     highlight: Annotated[
         Path | None,
         typer.Option(
-            help="Write the IDs with problems as JSON for the CAD adapters.",
+            help="Write the IDs with problems and warnings as JSON for the CAD "
+            "adapters.",
             hidden=True,
         ),
     ] = None,
@@ -218,8 +224,8 @@ def check(
         if len(exceeding) > 30:
             console.print(f"... and {len(exceeding) - 30} more (see the registry)")
 
-    def line(label: str, items: list, hint: str = "") -> None:
-        style = "green" if not items else "yellow"
+    def line(label: str, items: list, hint: str = "", category: str = "") -> None:
+        style = "green" if not items else "yellow" if category in WARNINGS else "red"
         shown = _keys_text(items[:20]) + (" ..." if len(items) > 20 else "")
         console.print(
             f"[{style}]{label}: {len(items)}[/] {shown} {hint if items else ''}"
@@ -236,29 +242,39 @@ def check(
         issues["unconvertible"],
         "(splines, offsets...)",
     )
-    line("With tori", issues["torus"], "(elbows: the 'Replace elbows' SpaceClaim tool)")
+    line(
+        "With tori",
+        issues["torus"],
+        "(elbows: the 'Replace elbows' SpaceClaim tool)",
+        "torus",
+    )
     line("Invalid solids", issues["invalid"])
-    line("Deleted instances", matching.missing)
+    line("Deleted instances", matching.missing, category="deleted")
     line(
         "Extra instances",
         sorted(i.id for i in matching.extra if i.id is not None),
         "(copies: they become new instances on export)",
     )
-    line("Moved instances", matching.moved, "(further than their own size)")
+    line("Moved instances", matching.moved, "(further than their own size)", "moved")
     line(
         "New components",
         issues["new"],
         "(tags not in the registry yet: added on export)",
+        "new",
     )
     untagged = [i.name for i in matching.untagged]
     console.print(
-        f"[{'green' if not untagged else 'yellow'}]Untagged parts: "
+        f"[{'green' if not untagged else 'red'}]Untagged parts: "
         f"{len(untagged)}[/] "
         + esc(", ".join(untagged[:10]))
         + (" (tag them: the 'Tag new components' SpaceClaim tool)" if untagged else "")
     )
     if highlight:
-        highlight.write_text(json.dumps(issues, indent=1))
+        severity = {
+            "problems": {k: v for k, v in issues.items() if k not in WARNINGS},
+            "warnings": {k: v for k, v in issues.items() if k in WARNINGS},
+        }
+        highlight.write_text(json.dumps(severity, indent=1))
 
 
 @app.command()

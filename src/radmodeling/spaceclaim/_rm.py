@@ -27,6 +27,7 @@ from System.Windows.Forms import (  # noqa: E402
 RM_TAG = re.compile(r"\[rm(\d+)\]")
 RM_RED = Color.FromArgb(208, 59, 59)
 RM_BLUE = Color.FromArgb(42, 120, 214)
+RM_YELLOW = Color.FromArgb(237, 161, 0)
 RM_GREY = Color.FromArgb(185, 184, 179)
 
 
@@ -235,20 +236,25 @@ def rm_instance_volume(rows):
     return sum(volumes) / len(volumes), None
 
 
-def rm_highlight(problems):
-    """Colour in red the components listed per category, the rest grey transparent.
+def rm_highlight(issues):
+    """Colour in red the components with problems, in yellow those with only
+    warnings, and the rest grey transparent.
 
-    Returns one line per category with its number of components.
+    issues is what 'radmod check --highlight' writes: component IDs per category,
+    under "problems" and "warnings". Returns one line per category with its number
+    of components.
     """
     by_id, _ = rm_bodies_by_id()
-    flagged = set()
+    flagged, warned = set(), set()
     lines = []
-    for category in sorted(problems):
-        ids = [i for i in problems[category] if i in by_id]
-        flagged.update(ids)
-        lines.append("%s: %d" % (category, len(problems[category])))
+    for severity, found in (("problems", flagged), ("warnings", warned)):
+        categories = issues.get(severity, {})
+        for category in sorted(categories):
+            found.update(i for i in categories[category] if i in by_id)
+            lines.append("%s: %d" % (category, len(categories[category])))
     every = [b for bodies in by_id.values() for b in bodies]
     rm_set_color(every, RM_GREY, transparent=True)
+    rm_set_color([b for i in warned - flagged for b in by_id[i]], RM_YELLOW)
     rm_set_color([b for i in flagged for b in by_id[i]], RM_RED)
     return lines
 

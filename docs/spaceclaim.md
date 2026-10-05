@@ -45,9 +45,12 @@ material.
 Runs `radmod check` on the open document without leaving SpaceClaim: saves a STEP
 copy next to it with the same name (`machine_simplified.scdocx` →
 `machine_simplified.step`, replacing the previous copy), checks it against the
-registry, shows the report and colours the components with problems in red. The
-document is not changed, so the `.scdocx` stays the working file. The registry must not be open in Excel, as
-the check updates it. SpaceClaim waits while the check runs. The volume tolerance is
+registry, shows the report and colours the components with problems in red. Those
+with only warnings are yellow: tori (fine in MCNP with their axis along X, Y or Z),
+moved components (which may be moved on purpose), components with deleted instances
+(the instances left are coloured) and new components (added to the registry on
+export). The document is not changed, so the `.scdocx` stays the working file. The
+registry must not be open in Excel, as the check updates it. SpaceClaim waits while the check runs. The volume tolerance is
 `VolumeTolerance` (passed as `--tolerance`).
 
 It runs `radmod` with the Python that wrote the loaders. Loaders written before this

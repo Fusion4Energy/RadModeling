@@ -554,7 +554,9 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
     output = run("check", simplified, "--highlight", problems)
     assert "Problems written" not in output
     # The interface of the SpaceClaim 'Check model' tool: IDs per category
-    assert json.loads(problems.read_text())["volume"] == []
+    issues = json.loads(problems.read_text())
+    assert issues["problems"]["volume"] == []
+    assert set(issues["warnings"]) == {"torus", "moved", "deleted", "new"}
     assert f"Registry: {registry}" in output.replace("\n", "")
     assert "Instances beyond volume tolerance: 0" in output
 
