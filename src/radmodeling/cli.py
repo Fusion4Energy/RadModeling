@@ -113,7 +113,7 @@ def init(
 
     All the instances of a part share its tag and stay linked, and each instance gets
     its own row in the registry. Simplify the tagged STEP in any CAD program. The
-    '[rmID]' tags in the component names must be kept; everything else (names,
+    [rmID] tags in the component names must be kept; everything else (names,
     hierarchy) can change freely.
     """
     from radmodeling import workflow
