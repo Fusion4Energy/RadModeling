@@ -16,7 +16,7 @@ Lengths: the CAD is in mm and MCNP in cm. Results are reported in cm and cm3.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -54,20 +54,72 @@ class VolumeComparison:
 
 
 class TaggedCells:
-    """The tagged cells of a geometry with their bounding boxes, to find the cells
-    of other instances near a component."""
+    """The cells of every instance and a box around them (cm), to find the cells of
+    other instances near a component.
 
-    def __init__(self, geometry: Geometry, cells: Mapping[Key, Sequence[int]]):
-        self.keys = [key for key, numbers in cells.items() for _ in numbers]
-        self.numbers = [n for numbers in cells.values() for n in numbers]
-        boxes = [geometry.cell_box(n) for n in self.numbers]
-        self.lo = np.array([b[0] if b else [-np.inf] * 3 for b in boxes]).reshape(-1, 3)
-        self.hi = np.array([b[1] if b else [np.inf] * 3 for b in boxes]).reshape(-1, 3)
+    Cells made of oblique planes often cannot be bounded from their surfaces. With
+    the CAD solids of the instance, its cells are bounded by the box sampled when
+    it is compared: cells beyond it are reported then (``touches_sampling_box``).
 
-    def near(self, lo: np.ndarray, hi: np.ndarray) -> list[tuple[Key, int]]:
-        """Cells whose boxes intersect the box from lo to hi (cm)."""
+    Each pair of the ``compared`` instances is measured once, from the instance whose
+    boxes are smaller, hence sampled more densely: a bolt in a plate is checked from
+    the bolt. Every overlap is inside both sampled regions.
+    """
+
+    def __init__(
+        self,
+        geometry: Geometry,
+        cells: Mapping[Key, Sequence[int]],
+        solids: Mapping[Key, Sequence[TopoDS_Shape]] | None = None,
+        compared: Collection[Key] = (),
+        margin: float = 0.05,
+    ):
+        self.cells = {key: list(numbers) for key, numbers in cells.items() if numbers}
+        self.keys = list(self.cells)
+        self._index = {key: i for i, key in enumerate(self.keys)}
+        self.lo = np.full((len(self.keys), 3), -np.inf)
+        self.hi = np.full((len(self.keys), 3), np.inf)
+        self._sampled_volume: dict[Key, float] = {}
+        self._sampled: dict[Key, np.ndarray] = {}  # (B, 6) boxes of the solids
+        for i, key in enumerate(self.keys):
+            boxes = [geometry.cell_box(n) for n in self.cells[key]]
+            if all(b is not None for b in boxes):
+                self.lo[i] = np.min([b[0] for b in boxes if b is not None], axis=0)
+                self.hi[i] = np.max([b[1] for b in boxes if b is not None], axis=0)
+            if solids and solids.get(key):
+                sampled = _padded_boxes(solids[key], margin) / MM_PER_CM
+                self.lo[i] = np.maximum(self.lo[i], sampled[:, :3].min(axis=0))
+                self.hi[i] = np.minimum(self.hi[i], sampled[:, 3:].max(axis=0))
+                self._sampled[key] = sampled
+                volumes = np.prod(sampled[:, 3:] - sampled[:, :3], axis=1)
+                self._sampled_volume[key] = float(volumes.sum())
+        self._compared = set(compared) & set(self._sampled_volume)
+
+    def measures(self, key: Key, other: Key) -> bool:
+        """Whether the comparison of ``key`` measures its overlap with ``other``."""
+        if other == key:
+            return False
+        if key not in self._compared or other not in self._compared:
+            return True
+        volume = self._sampled_volume
+        return (volume[key], key) < (volume[other], other)
+
+    def near(self, lo: np.ndarray, hi: np.ndarray) -> list[Key]:
+        """Instances whose boxes intersect the box from lo to hi (cm)."""
         index = np.flatnonzero(np.all((self.lo <= hi) & (self.hi >= lo), axis=1))
-        return [(self.keys[i], self.numbers[i]) for i in index]
+        return [self.keys[i] for i in index]
+
+    def around(self, key: Key, points: np.ndarray) -> np.ndarray:
+        """Mask of the points (cm) that can be in the cells of an instance."""
+        i = self._index[key]
+        inside = np.all((points >= self.lo[i]) & (points <= self.hi[i]), axis=1)
+        boxes = self._sampled.get(key)
+        if boxes is not None and len(boxes) > 1:
+            in_any = np.zeros(len(points), dtype=bool)
+            for box in boxes:
+                in_any |= np.all((points >= box[:3]) & (points <= box[3:]), axis=1)
+            inside &= in_any
+        return inside
 
 
 def compare_component(
@@ -135,16 +187,26 @@ def compare_component(
     in_cell = cell_count > 0
     shared = {key: cell_count > 1} if np.any(cell_count > 1) else {}
     if others is not None and np.any(in_cell):
-        inside = points.reshape(-1, 3)[in_cell] / MM_PER_CM
-        for other, cell in others.near(inside.min(axis=0), inside.max(axis=0)):
-            if other == key:
+        # Other cells only matter inside the cells of the instance
+        index = np.flatnonzero(in_cell)
+        inside = points.reshape(-1, 3)[index] / MM_PER_CM
+        for other in others.near(inside.min(axis=0), inside.max(axis=0)):
+            if not others.measures(key, other):
                 continue
+            in_box = others.around(other, inside)
+            candidates = index[in_box]
+            if not candidates.size:
+                continue
+            candidate_evaluator = geometry.evaluator(inside[in_box])
+            hits = np.zeros(candidates.size, dtype=bool)
             try:
-                mask = in_cell & evaluator.cell(cell)
+                for cell in others.cells[other]:
+                    hits |= candidate_evaluator.cell(cell)
             except ValueError:
                 continue  # reported when that instance is compared
-            if np.any(mask):
-                shared[other] = shared[other] | mask if other in shared else mask
+            if np.any(hits):
+                shared[other] = np.zeros_like(in_cell)
+                shared[other][candidates[hits]] = True
     in_cell = in_cell.reshape(t.shape)
 
     cad_only = in_cad & ~in_cell

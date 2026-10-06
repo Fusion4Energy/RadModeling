@@ -54,8 +54,8 @@ CAD vs MCNP volumes and discrepancies per instance, and the volume shared by the
 cells of different instances (or by cells of the same instance). A clash in the CAD,
 such as a bolt left inside a plate, converts faithfully: each instance agrees with its
 own cells, but their cells overlap. Each pair is measured from the points sampled
-around both instances; a very small overlap can be missed, so raise `--points` to
-look closer. `--components 3,7.2` limits it
+around the smaller instance (the more densely sampled one); a very small overlap
+can be missed, so raise `--points` to look closer. `--components 3,7.2` limits it
 to some components (all instances of 3, instance 2 of 7), `--points` sets the
 samples per instance (100 000 by default).
 

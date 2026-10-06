@@ -484,7 +484,7 @@ def compare(
         keys = {Key.parse(t) for t in wanted if "." in t}
         selected = [k for k in selected if k.id in ids or k in keys]
     rng = np.random.default_rng(seed)
-    tagged = TaggedCells(geometry, cells)
+    tagged = TaggedCells(geometry, cells, solids, compared=selected)
 
     results = []
     with console.status("") as status:
@@ -529,13 +529,11 @@ def compare(
     if problems:
         console.print(table)
 
-    # Each pair is measured by both instances: keep the more precise estimate
-    pairs: dict[tuple[Key, Key], tuple[float, float]] = {}
-    for r in results:
-        for other, (volume, std) in r.overlaps.items():
-            pair = (min(r.key, other), max(r.key, other))
-            if pair not in pairs or std < pairs[pair][1]:
-                pairs[pair] = (volume, std)
+    pairs = {
+        (min(r.key, other), max(r.key, other)): overlap
+        for r in results
+        for other, overlap in r.overlaps.items()
+    }
     overlap_table = Table(title="Overlapping instances")
     for column in ("ID", "ID", "Overlap cm3"):
         overlap_table.add_column(column)

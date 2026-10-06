@@ -568,9 +568,10 @@ def test_compare_ignores_cells_that_only_touch():
     assert result.overlaps == {}
 
 
-def test_cli_compare_reports_overlapping_pairs_once(tmp_path, cad_model):
+def test_cli_compare_reports_overlapping_pairs_once(tmp_path):
     from typer.testing import CliRunner
 
+    from radmodeling.cad.step import compound
     from radmodeling.cli import app
 
     runner = CliRunner()
@@ -580,24 +581,37 @@ def test_cli_compare_reports_overlapping_pairs_once(tmp_path, cad_model):
         assert result.exit_code == 0, result.output
         return result.output
 
-    run("init", cad_model)
+    # The first bolt was left inside the block: the CAD and the cells clash
+    bolts = compound(
+        [models.cylinder(95, 50, 0, 5, 20), models.cylinder(150, 100, 0, 5, 20)]
+    )
+    step = tmp_path / "machine.step"
+    parts = [
+        Part("Block", ("Machine",), models.block()),
+        Part("Pipe", ("Machine",), models.pipe()),
+        Part("Ball", ("Machine",), models.ball()),
+        Part("Bolts", ("Machine",), bolts),
+    ]
+    write_step(parts, step)
+    run("init", step)
     exported = tmp_path / "export.step"
-    run("export", cad_model.with_name("machine_simplified.step"), "-o", exported)
+    run("export", step.with_name("machine_simplified.step"), "-o", exported)
     mcnp = tmp_path / "model.mcnp"
-    # The first bolt moved into the block: its cell clashes with the block's
     mcnp.write_text(models.mcnp_text().replace("12 c/z 15 0 0.5", "12 c/z 9.5 5 0.5"))
     report = tmp_path / "compare.csv"
     output = run(
         "compare", exported, mcnp, "--no-registry", "--points", "20000",
         "--seed", "2", "--report", report,
     )  # fmt: skip
-    assert "Overlapping instances" in output
+    assert "2 instances agree" in output
     assert "1 overlapping pairs" in output
     rows = list(csv.DictReader(report.open()))
     overlaps = {row["component_id"]: row["overlaps"] for row in rows}
-    assert overlaps["1"].startswith("4.1:")  # the bolt's CAD is elsewhere: only the
-    # block's sampling sees the overlap
-    assert overlaps["2"] == overlaps["3"] == ""
+    # Measured once, from the bolts: sampled more densely than the block
+    assert overlaps["4"].startswith("1.1:")
+    assert overlaps["1"] == overlaps["2"] == overlaps["3"] == ""
+    volume = float(overlaps["4"].partition(":")[2])
+    assert volume == pytest.approx(math.pi * 0.5**2 * 2, rel=0.3)
 
 
 def test_cli_pipeline(tmp_path, cad_model, library_file):
