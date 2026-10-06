@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, NoReturn
 
@@ -40,6 +41,7 @@ def _fail(message: str) -> NoReturn:
 
 
 REGISTRY_SUFFIX = "_registry.csv"
+REPORT_SUFFIX = "_compare.csv"  # report of 'compare' on MODEL.mcnp: MODEL_compare.csv
 # Issues of 'check' worth a look but not necessarily wrong: printed in yellow and
 # coloured yellow by the CAD adapters, the other issues in red. Tori are fine in MCNP
 # with their axis along X, Y or Z; components are often moved or deleted on purpose;
@@ -433,7 +435,11 @@ def compare(
         typer.Option(help="Only these components, e.g. '3,7.2' (7.2: instance 2)."),
     ] = None,
     report: Annotated[
-        Path | None, typer.Option(help="Write the full results as CSV.")
+        Path | None,
+        typer.Option(
+            help="Report CSV with the full results. Default: MODEL_compare.csv next "
+            "to MODEL.mcnp, where 'atlas' finds it (not written with --components)."
+        ),
     ] = None,
     threshold: Annotated[
         float, typer.Option(help="Discrepancy reported as a problem [%].")
@@ -442,8 +448,8 @@ def compare(
 ) -> None:
     """Compare every instance's CAD solids with its MCNP cells by point sampling.
 
-    Gives the MCNP volume of each instance (for the density correction factors) and
-    the volume where CAD and MCNP disagree.
+    Gives the MCNP volume of each instance (for the density correction factors), the
+    volume where CAD and MCNP disagree and the volume of overlapping cells.
     """
     from radmodeling.compare import TaggedCells, compare_component
     from radmodeling.mcnp.geometry import Geometry
@@ -502,11 +508,7 @@ def compare(
                 )
             )
 
-    problems = [
-        r
-        for r in results
-        if r.error or r.touches_sampling_box or not r.discrepancy_pct <= threshold
-    ]
+    problems = [r for r in results if r.exceeds(threshold)]
     table = Table(title=f"Instances with problems (discrepancy > {threshold:g}%)")
     for column in ("ID", "Cells", "CAD cm3", "MCNP cm3", "Discrepancy %", "Note"):
         table.add_column(column)
@@ -560,6 +562,8 @@ def compare(
                 reg[r.key].mcnp_volume_std_cm3 = r.mcnp_volume_std_cm3
         reg.save(registry)
         console.print(f"MCNP volumes saved in {esc(str(registry))} (used for the DCF).")
+    if report is None and not components:
+        report = mcnp.with_name(mcnp.stem + REPORT_SUFFIX)
     if report:
         with open(report, "w", encoding="utf-8", newline="") as outfile:
             writer = csv.writer(outfile)
@@ -601,6 +605,18 @@ def compare(
         console.print(f"Results written to {esc(str(report))}")
 
 
+def _find_report(mcnp: Path) -> Path | None:
+    """The report of 'compare' on MODEL.mcnp for MODEL.mcnp or MODEL_*.mcnp (such as
+    MODEL_materials.mcnp, written by 'materials'): the longest such MODEL wins."""
+    names = [
+        p
+        for p in mcnp.resolve().parent.glob("*" + REPORT_SUFFIX)
+        if mcnp.stem == (stem := p.name[: -len(REPORT_SUFFIX)])
+        or mcnp.stem.startswith(stem + "_")
+    ]
+    return max(names, key=lambda p: len(p.name), default=None)
+
+
 def _cells_text(cells: list[int]) -> str:
     if not cells:
         return "-"
@@ -639,7 +655,7 @@ def slice_(
     """
     from radmodeling.compare import Plane
     from radmodeling.plot import render_slice
-    from radmodeling.slices import load_scene, make_slice
+    from radmodeling.slices import load_scene, make_slice, zoom_slices
 
     with console.status("Reading the models..."):
         scene = load_scene(mcnp, step, _library_names(library))
@@ -669,7 +685,15 @@ def slice_(
 
     with console.status("Slicing..."):
         item = make_slice(scene, plane, resolution)
-    render_slice(item.result, output, scene.slots, scene.material_names, item.outlines)
+        zoom_slices(scene, item, resolution, max_zooms=0)  # circles small problems
+    render_slice(
+        item.result,
+        output,
+        scene.slots,
+        scene.material_names,
+        item.outlines,
+        markers=item.markers,
+    )
     console.print(f"[green]Written[/] {esc(str(output))}")
     _print_slice_problems(item.result)
 
@@ -705,8 +729,8 @@ def atlas(
     step: Annotated[
         Path,
         typer.Option(
-            help="STEP model to overlay. With the one from 'export', CAD/MCNP "
-            "mismatches are highlighted."
+            help="STEP model to overlay. With the one from 'export', the problems are "
+            "searched in 3D and CAD/MCNP mismatches are highlighted."
         ),
     ],
     output: Annotated[Path, typer.Option("--output", "-o", help="PDF to write.")],
@@ -716,25 +740,40 @@ def atlas(
     ] = "x:3,y:3,z:3",
     report: Annotated[
         Path | None,
-        typer.Option(help="Report CSV of 'compare': adds a slice per worst instance."),
+        typer.Option(
+            help="Report CSV of 'compare' on this geometry: only its problem instances "
+            "are searched again, to locate the problems. Default: MODEL_compare.csv "
+            "for MODEL.mcnp or MODEL_*.mcnp, if there is one."
+        ),
     ] = None,
+    no_report: Annotated[
+        bool,
+        typer.Option(
+            "--no-report", help="Search every instance, even with a report around."
+        ),
+    ] = False,
     worst: Annotated[
-        int, typer.Option(help="Maximum number of instances sliced from the report.")
+        int, typer.Option(help="Maximum number of problem instances sliced.")
     ] = 20,
     threshold: Annotated[
         float, typer.Option(help="Discrepancy that makes an instance a problem [%].")
     ] = 1.0,
+    points: Annotated[int, typer.Option(help="Sample points per instance.")] = 100_000,
     resolution: Annotated[int, typer.Option(help="Pixels along the width.")] = 400,
     library: Annotated[
         Path | None, typer.Option("--library", "-l", help="For material names.")
     ] = None,
+    seed: Annotated[int | None, typer.Option(help="Random seed.")] = None,
 ) -> None:
-    """Write a PDF atlas of slices: across the whole model and through the worst
-    instances of a 'compare' report.
+    """Write a PDF atlas of slices: across the whole model and through every problem.
 
-    The first pages summarise the pixels in no cell, in several cells and where CAD
-    and MCNP disagree for every slice. Material colours are the same on all pages.
+    With the STEP file from 'export', every instance is sampled like 'compare' does
+    and the worst problems (CAD/MCNP mismatches, overlapping cells) get a slice
+    through them. Small clusters of problem pixels are circled and zoomed in on
+    their own pages. The first pages summarise the pixels in no cell, in several
+    cells and where CAD and MCNP disagree for every slice.
     """
+    from radmodeling.compare import Plane, TaggedCells, compare_component
     from radmodeling.plot import write_atlas
     from radmodeling.slices import (
         instance_plane,
@@ -742,7 +781,11 @@ def atlas(
         make_slice,
         overview_planes,
         parse_plane_counts,
+        plane_shows,
         read_problems,
+        solids_bounds_cm,
+        spot_plane,
+        zoom_slices,
     )
 
     try:
@@ -756,48 +799,118 @@ def atlas(
         _fail(f"{step} has no solids")
     todo = overview_planes(*bounds, counts)
 
-    if report:
-        if not scene.instances:
-            _fail(f"--report needs the STEP file written by 'export', not {step}")
-        problems = read_problems(report, threshold)
-        missing = [p.key for p in problems if p.key not in scene.instances]
-        if missing:
+    if report and not scene.compares:
+        _fail(f"--report needs the STEP file written by 'export', not {step}")
+    if no_report:
+        report = None
+    elif report is None and scene.compares:
+        report = _find_report(mcnp)
+    if not scene.compares:
+        console.print(
+            f"[yellow]{esc(str(step))} is not from 'export' (or no cell is tagged): "
+            "only the overview slices are drawn, without searching for problems[/]"
+        )
+    else:
+        keys = sorted(scene.instances)
+        if report:
             console.print(
-                f"[yellow]Instances of the report not in {esc(str(step))}:[/] "
-                + _keys_text(missing)
+                f"[yellow]Using {esc(str(report))}: only the instances it reports are "
+                "searched. It must come from 'compare' on this geometry and STEP file: "
+                "run 'compare' again after changing them, or use --no-report.[/]"
             )
-        problems = [p for p in problems if p.key in scene.instances]
-        for problem in problems[:worst]:
-            instance = scene.instances[problem.key]
-            title = f"{problem.key} {instance.name}: discrepancy "
-            title += f"{problem.discrepancy_pct:.3g} %"
-            if problem.note:
-                title += f" ({problem.note})"
-            todo.append((title, instance_plane(instance.solids)))
+            listed = [p.key for p in read_problems(report, threshold)]
+            missing = [k for k in listed if k not in scene.instances]
+            if missing:
+                _fail(
+                    f"instances of {report} not in {step}: {_keys_text(missing)} "
+                    "(a report of another model?)"
+                )
+            keys = listed
+        solids = {k: i.solids for k, i in scene.instances.items()}
+        tagged = TaggedCells(scene.geometry, scene.cells, solids, keys)
+        rng = np.random.default_rng(seed)
+        results = []
+        with console.status("") as status:
+            for i, key in enumerate(keys, 1):
+                status.update(f"Searching problems: {key} ({i}/{len(keys)})")
+                results.append(
+                    compare_component(
+                        key,
+                        scene.instances[key].solids,
+                        scene.cells.get(key, []),
+                        scene.geometry,
+                        tagged,
+                        n_points=points,
+                        rng=rng,
+                        locate=True,
+                    )
+                )
+        problems = [r for r in results if r.is_problem(threshold)]
+        problems.sort(
+            key=lambda r: (
+                not (r.error or math.isnan(r.discrepancy_pct)),
+                not r.exceeds(threshold),
+                -np.nan_to_num(r.discrepancy_pct),
+                -sum(v for v, _ in r.overlaps.values()),
+            )
+        )
+        console.print(f"Instances with problems: {len(problems)}")
         if len(problems) > worst:
             console.print(
                 f"[yellow]{len(problems) - worst} more problem instances[/] were left "
                 "out (see --worst)"
             )
+        for r in problems[:worst]:
+            instance = scene.instances[r.key]
+            name = f"{r.key} {instance.name}"
+            lo, hi = solids_bounds_cm(instance.solids)
+            size = float(np.max(hi - lo))
+            spots = [
+                spot
+                for spot in r.spots
+                if spot.kind == "overlap" or r.exceeds(threshold)
+            ]
+            shown: list[Plane] = []
+            for spot in spots:
+                if any(plane_shows(plane, spot) for plane in shown):
+                    continue
+                context = max(0.15 * size, float(np.max(spot.hi - spot.lo)), 1.0)
+                shown.append(spot_plane(spot, context))
+                if spot.kind == "overlap":
+                    other = "itself" if spot.other == r.key else str(spot.other)
+                    title = f"{name}: overlap with {other} ({spot.volume_cm3:.3g} cm3)"
+                else:
+                    title = f"{name}: mismatch, discrepancy {r.discrepancy_pct:.3g} %"
+                todo.append((title, shown[-1]))
+            if not spots:
+                note = r.error or (
+                    "no tagged cells" if not r.cells else "no problem located"
+                )
+                title = f"{name}: discrepancy {r.discrepancy_pct:.3g} % ({note})"
+                todo.append((title, instance_plane(instance.solids)))
     if not todo:
-        _fail("no slices to draw: give --planes or a --report with problems")
+        _fail("no slices to draw: give --planes or a model from 'export'")
 
     slices = []
     with console.status("") as status:
         for i, (title, plane) in enumerate(todo, 1):
             status.update(f"Slice {i}/{len(todo)}: {esc(title)}")
-            slices.append(make_slice(scene, plane, resolution, title))
+            item = make_slice(scene, plane, resolution, title)
+            zoom_slices(scene, item, resolution)
+            slices.append(item)
     header = [f"MCNP input: {mcnp}", f"CAD: {step}"]
     if report:
-        header.append(f"Compare report: {report} (threshold {threshold:g} %)")
+        header.append(f"Problem instances from: {report}")
+    header.append(f"Discrepancy threshold: {threshold:g} %")
     with console.status("Writing the PDF..."):
         write_atlas(slices, output, scene.slots, scene.material_names, header)
 
     bad = [s for s in slices if s.result.lost_pixels or s.result.overlap_pixels]
     bad += [s for s in slices if s.result.mismatch_pixels and s not in bad]
+    zooms = sum(len(item.zooms) for item in slices)
     console.print(
-        f"[green]Written {len(slices)} slices[/] to {esc(str(output))}. "
-        f"Slices with problems: {len(bad)}"
+        f"[green]Written {len(slices)} slices and {zooms} zooms[/] to "
+        f"{esc(str(output))}. Slices with problems: {len(bad)}"
     )
 
 

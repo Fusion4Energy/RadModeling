@@ -559,6 +559,26 @@ def test_compare_measures_overlaps_with_other_instances():
     assert volume == pytest.approx(lens, abs=4 * std)
 
 
+def test_compare_locates_the_overlap():
+    text = TWO_RODS.replace("4 c/z 1.05 0 0.5", "4 c/z 0.8 0 0.5")
+    geometry = Geometry(migjorn.parse(text))
+    tagged = TaggedCells(geometry, {Key(1): [1], Key(2): [2]})
+    result = compare_component(
+        Key(1), [models.cylinder(0, 0, 0, 5, 20)], [1], geometry, tagged,
+        n_points=20_000, rng=np.random.default_rng(7), locate=True,
+    )  # fmt: skip
+    spots = [s for s in result.spots if s.kind == "overlap"]
+    assert len(spots) == 1  # one lens, between x = 0.3 and 0.5 cm, 2 cm tall
+    spot = spots[0]
+    assert spot.other == Key(2)
+    assert 0.3 <= spot.point[0] <= 0.5
+    assert spot.lo[0] >= 0.3 - 1e-9 and spot.hi[0] <= 0.5 + 1e-9
+    assert spot.hi[2] - spot.lo[2] > 1.5
+    assert spot.volume_cm3 == pytest.approx(result.overlaps[Key(2)][0])
+    # The CAD and the cells of rod 1 agree: no mismatch worth showing
+    assert not [s for s in result.spots if s.kind == "mismatch"]
+
+
 def test_compare_ignores_cells_that_only_touch():
     geometry = Geometry(migjorn.parse(models.mcnp_text()))
     tagged = TaggedCells(geometry, {Key(1): [1], Key(2): [2], Key(3): [3]})
@@ -571,7 +591,6 @@ def test_compare_ignores_cells_that_only_touch():
 def test_cli_compare_reports_overlapping_pairs_once(tmp_path):
     from typer.testing import CliRunner
 
-    from radmodeling.cad.step import compound
     from radmodeling.cli import app
 
     runner = CliRunner()
@@ -582,22 +601,12 @@ def test_cli_compare_reports_overlapping_pairs_once(tmp_path):
         return result.output
 
     # The first bolt was left inside the block: the CAD and the cells clash
-    bolts = compound(
-        [models.cylinder(95, 50, 0, 5, 20), models.cylinder(150, 100, 0, 5, 20)]
-    )
-    step = tmp_path / "machine.step"
-    parts = [
-        Part("Block", ("Machine",), models.block()),
-        Part("Pipe", ("Machine",), models.pipe()),
-        Part("Ball", ("Machine",), models.ball()),
-        Part("Bolts", ("Machine",), bolts),
-    ]
-    write_step(parts, step)
+    step = models.write_clash_cad(tmp_path / "machine.step")
     run("init", step)
     exported = tmp_path / "export.step"
     run("export", step.with_name("machine_simplified.step"), "-o", exported)
     mcnp = tmp_path / "model.mcnp"
-    mcnp.write_text(models.mcnp_text().replace("12 c/z 15 0 0.5", "12 c/z 9.5 5 0.5"))
+    mcnp.write_text(models.clash_mcnp_text())
     report = tmp_path / "compare.csv"
     output = run(
         "compare", exported, mcnp, "--no-registry", "--points", "20000",

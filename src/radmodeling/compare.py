@@ -10,12 +10,15 @@ against the MCNP cells of that component. This gives, without running MCNP:
 * the volume the cells of the component share with the cells of other components (or
   with each other). Clashes in the CAD, such as a bolt left inside a plate, convert
   faithfully into overlapping cells that agree with their own CAD.
+* optionally, where those problems are (:class:`Spot`), to slice through them.
 
 Lengths: the CAD is in mm and MCNP in cm. Results are reported in cm and cm3.
 """
 
 from __future__ import annotations
 
+import itertools
+import math
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 
@@ -28,6 +31,18 @@ from radmodeling.mcnp.geometry import Geometry
 from radmodeling.registry import Key
 
 MM_PER_CM = 10.0
+
+
+@dataclass
+class Spot:
+    """A cluster of sample points where an instance has a problem (cm)."""
+
+    kind: str  # "overlap" or "mismatch" (CAD and MCNP disagree)
+    other: Key | None  # the overlapping instance (the instance itself: its own cells)
+    point: np.ndarray  # a sample point of the problem, near the centre of the cluster
+    lo: np.ndarray  # box of the cluster
+    hi: np.ndarray
+    volume_cm3: float
 
 
 @dataclass
@@ -44,6 +59,7 @@ class VolumeComparison:
     # Volume and its standard deviation shared with the cells of other instances
     # (with its own key: cells of the instance overlapping each other)
     overlaps: dict[Key, tuple[float, float]] = field(default_factory=dict)
+    spots: list[Spot] = field(default_factory=list)  # only when asked to locate
 
     @property
     def discrepancy_pct(self) -> float:
@@ -51,6 +67,18 @@ class VolumeComparison:
         if self.cad_volume_cm3 <= 0:
             return float("nan")
         return (self.cad_only_cm3 + self.mcnp_only_cm3) / self.cad_volume_cm3 * 100
+
+    def exceeds(self, threshold: float) -> bool:
+        """Whether CAD and MCNP disagree beyond the threshold [%] (or could not be
+        compared)."""
+        return (
+            bool(self.error)
+            or self.touches_sampling_box
+            or not self.discrepancy_pct <= threshold
+        )
+
+    def is_problem(self, threshold: float) -> bool:
+        return self.exceeds(threshold) or bool(self.overlaps)
 
 
 class TaggedCells:
@@ -132,6 +160,7 @@ def compare_component(
     points_per_line: int = 20,
     margin: float = 0.05,
     rng: np.random.Generator | None = None,
+    locate: bool = False,
 ) -> VolumeComparison:
     """Compare the CAD solids of an instance with its MCNP cells by point sampling.
 
@@ -143,7 +172,8 @@ def compare_component(
     instances with many solids can get a few more points than ``n_points``.
 
     The cells in ``others`` (except those of ``key``) are checked for overlaps with
-    the cells of the instance.
+    the cells of the instance. With ``locate``, the points of every overlap and of
+    the CAD/MCNP disagreements are grouped into :class:`Spot` clusters.
     """
     rng = rng or np.random.default_rng()
     try:
@@ -229,6 +259,25 @@ def compare_component(
         volume, overlap_variance = integral(mask.reshape(t.shape).astype(float))
         overlaps[other] = (volume, float(np.sqrt(overlap_variance)))
 
+    spots = []
+    if locate:
+        # Volume represented by each point, and the spacing of the lines of points
+        point_volume = (
+            (box_volumes[box_of_line] / lines_per_box[box_of_line])[:, None]
+            * weight
+            / points_per_line
+        )
+        widest = int(np.argmax(lines_per_box))
+        area = np.prod(boxes[widest, 3:5] - boxes[widest, :2]) / MM_PER_CM**2
+        spacing = math.sqrt(area / lines_per_box[widest])
+        flat = points.reshape(-1, 3) / MM_PER_CM
+        problems = [("mismatch", None, (cad_only | mcnp_only).reshape(-1))]
+        problems += [("overlap", k, mask) for k, mask in sorted(shared.items())]
+        for kind, other, mask in problems:
+            spots += _spots(
+                kind, other, flat[mask], point_volume.reshape(-1)[mask], 2 * spacing
+            )
+
     # Cells reaching the faces of the sampling boxes, away from any other box,
     # probably continue beyond them
     near = 0.01 * (hi - lo)[:, None, :]
@@ -245,7 +294,70 @@ def compare_component(
         mcnp_only_cm3=integral(mcnp_only.astype(float))[0],
         touches_sampling_box=bool(np.any(in_cell & on_faces & (weight == 1))),
         overlaps=overlaps,
+        spots=spots,
     )
+
+
+def _spots(
+    kind: str,
+    other: Key | None,
+    points: np.ndarray,
+    volumes: np.ndarray,
+    size: float,
+    max_spots: int = 3,
+    min_fraction: float = 0.1,
+) -> list[Spot]:
+    """The largest clusters of some problem points (cm), skipping those much smaller
+    than the largest one (scattered points along surfaces where the tessellated CAD
+    and the exact MCNP surfaces differ)."""
+    if not len(points):
+        return []
+    labels = cluster_labels(points, size)
+    totals = np.bincount(labels, volumes)
+    spots = []
+    for label in np.argsort(-totals)[:max_spots]:
+        if totals[label] < min_fraction * totals.max():
+            break
+        members = points[labels == label]
+        weights = volumes[labels == label]
+        centre = weights @ members / weights.sum()
+        point = members[np.argmin(np.linalg.norm(members - centre, axis=1))]
+        spots.append(
+            Spot(
+                kind,
+                other,
+                point,
+                members.min(axis=0),
+                members.max(axis=0),
+                float(totals[label]),
+            )
+        )
+    return spots
+
+
+def cluster_labels(points: np.ndarray, size: float) -> np.ndarray:
+    """Group points (N, d) into clusters: points in neighbouring cubes of a grid of
+    the given size are in the same cluster. Returns a label from 0 per point."""
+    cubes = np.floor(points / size).astype(np.int64)
+    unique, inverse = np.unique(cubes, axis=0, return_inverse=True)
+    index = {tuple(c): i for i, c in enumerate(unique.tolist())}
+    offsets = list(itertools.product((-1, 0, 1), repeat=points.shape[1]))
+    cube_label = np.full(len(unique), -1)
+    n_labels = 0
+    for start in range(len(unique)):
+        if cube_label[start] >= 0:
+            continue
+        cube_label[start] = n_labels
+        stack = [start]
+        while stack:
+            cube = unique[stack.pop()]
+            for offset in offsets:
+                neighbour = index.get(tuple((cube + offset).tolist()))
+                if neighbour is not None and cube_label[neighbour] < 0:
+                    cube_label[neighbour] = n_labels
+                    stack.append(neighbour)
+        n_labels += 1
+    return cube_label[inverse.reshape(-1)]
 
 
 def _padded_boxes(solids: Sequence[TopoDS_Shape], margin: float) -> np.ndarray:

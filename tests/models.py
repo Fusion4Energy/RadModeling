@@ -58,6 +58,25 @@ def write_cad(path: Path) -> Path:
     return path
 
 
+def write_clash_cad(path: Path) -> Path:
+    """The model of :func:`write_cad` with the first bolt left inside the block (at
+    x = 95 mm, the block ends at 100): use with :func:`clash_mcnp_text`."""
+    bolts = compound([cylinder(95, 50, 0, 5, 20), cylinder(150, 100, 0, 5, 20)])
+    parts = [
+        Part("Block", ("Machine",), block()),
+        Part("Pipe", ("Machine",), pipe()),
+        Part("Ball", ("Machine",), ball()),
+        Part("Bolts", ("Machine",), bolts),
+    ]
+    write_step(parts, path)
+    return path
+
+
+def clash_mcnp_text() -> str:
+    """MCNP model of :func:`write_clash_cad`: cell 4 (bolt) overlaps cell 1 (block)."""
+    return mcnp_text().replace("12 c/z 15 0 0.5", "12 c/z 9.5 5 0.5")
+
+
 def translation(x: float, y: float, z: float = 0.0) -> TopLoc_Location:
     move = gp_Trsf()
     move.SetTranslation(gp_Vec(x, y, z))

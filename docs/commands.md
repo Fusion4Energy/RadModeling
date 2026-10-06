@@ -50,7 +50,8 @@ how `compare`, `materials` and `slice` find the cells of each component.
 radmod compare FOR_CONVERSION.step MODEL.mcnp
 ```
 
-CAD vs MCNP volumes and discrepancies per instance, and the volume shared by the
+CAD vs MCNP volumes and discrepancies per instance, written to `MODEL_compare.csv`
+(or `--report`; not written with `--components`), and the volume shared by the
 cells of different instances (or by cells of the same instance). A clash in the CAD,
 such as a bolt left inside a plate, converts faithfully: each instance agrees with its
 own cells, but their cells overlap. Each pair is measured from the points sampled
@@ -87,8 +88,12 @@ radmod atlas MODEL.mcnp --step FOR_CONVERSION.step -o ATLAS.pdf
 ```
 
 PDF with a summary of the problems of every slice, evenly spaced slices across the
-model (`--planes x:3,y:3,z:6`) and, with `--report COMPARE.csv`, a zoomed slice
-through each of the `--worst` instances of a `compare` report.
+model (`--planes x:3,y:3,z:6`) and a slice through each problem of the `--worst`
+instances, found by sampling every instance like `compare` (`--points`). Small
+problems are circled and zoomed on their own pages. The report of `compare`
+(`MODEL_compare.csv` for `MODEL.mcnp` or `MODEL_*.mcnp`, or `--report`) is used when
+found: only the instances it reports are searched. It must come from the current
+geometry and STEP file; `--no-report` searches every instance.
 
 ## Geometry tools
 

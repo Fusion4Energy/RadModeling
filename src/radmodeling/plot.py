@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -16,12 +17,12 @@ from matplotlib.backends.backend_pdf import PdfPages  # noqa: E402
 from matplotlib.colors import ListedColormap  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
-from matplotlib.patches import Patch  # noqa: E402
+from matplotlib.patches import Circle, Patch  # noqa: E402
 
 from radmodeling.compare import SliceResult  # noqa: E402
 
 if TYPE_CHECKING:
-    from radmodeling.slices import Slice
+    from radmodeling.slices import Marker, Slice
 
 # Categorical slots in fixed order (validated for colour-vision deficiencies). The
 # palette's red slot is left out so that red only ever means a problem.
@@ -50,9 +51,10 @@ def render_slice(
     material_names: dict[int, str] | None = None,
     cad_outlines: list[np.ndarray] | None = None,
     title: str = "",
+    markers: Sequence[Marker] = (),
 ) -> None:
     """Draw a slice (see :func:`slice_figure`) to an image file."""
-    fig = slice_figure(result, slots, material_names, cad_outlines, title)
+    fig = slice_figure(result, slots, material_names, cad_outlines, title, markers)
     fig.savefig(path, dpi=150, bbox_inches="tight")
     plt.close(fig)
 
@@ -63,11 +65,13 @@ def slice_figure(
     material_names: dict[int, str] | None = None,
     cad_outlines: list[np.ndarray] | None = None,
     title: str = "",
+    markers: Sequence[Marker] = (),
 ) -> Figure:
     """Draw MCNP cells coloured by material, CAD outlines and the discrepancies.
 
     Args:
         cad_outlines: polylines in the plane coordinates (u, v), in cm.
+        markers: circles around small problems, labelled with their zoom page.
     """
     material_names = material_names or {}
     plane = result.plane
@@ -113,17 +117,19 @@ def slice_figure(
     if -1 in used:
         legend.append(Patch(facecolor=NO_CELL, label="No cell (lost particles)"))
 
-    problems = result.overlaps.copy()
+    layers = [(result.overlaps, "xxxx", "Overlap (several cells)")]
     if result.mismatch is not None:
-        problems |= result.mismatch
-    if problems.any():
+        layers.append((result.mismatch & ~result.overlaps, "////", "CAD/MCNP mismatch"))
+    for problems, hatch, label in layers:
+        if not problems.any():
+            continue
         ax.contourf(
             np.linspace(extent[0], extent[1], problems.shape[1]),
             np.linspace(extent[3], extent[2], problems.shape[0]),
             problems.astype(float),
             levels=[0.5, 1.5],
             colors="none",
-            hatches=["////"],
+            hatches=[hatch],
         )
         ax.imshow(
             np.ma.masked_where(~problems, problems),
@@ -132,8 +138,40 @@ def slice_figure(
             interpolation="nearest",
             alpha=0.55,
         )
-        label = "CAD/MCNP mismatch" if result.mismatch is not None else "Overlap"
-        legend.append(Patch(facecolor=CRITICAL, alpha=0.55, hatch="////", label=label))
+        legend.append(Patch(facecolor=CRITICAL, alpha=0.55, hatch=hatch, label=label))
+
+    for marker in markers:
+        ax.add_patch(
+            Circle(
+                (marker.u, marker.v),
+                marker.radius,
+                fill=False,
+                edgecolor=CRITICAL,
+                linewidth=1.5,
+            )
+        )
+        if marker.label:
+            ax.annotate(
+                marker.label,
+                (marker.u + marker.radius * 0.71, marker.v + marker.radius * 0.71),
+                xytext=(3, 3),
+                textcoords="offset points",
+                color=CRITICAL,
+                fontsize=9,
+                weight="bold",
+            )
+    if markers:
+        legend.append(
+            Line2D(
+                [],
+                [],
+                marker="o",
+                linestyle="none",
+                markerfacecolor="none",
+                markeredgecolor=CRITICAL,
+                label="Small problem",
+            )
+        )
 
     for line in cad_outlines or []:
         ax.plot(line[:, 0], line[:, 1], color=TEXT, linewidth=0.8)
@@ -204,33 +242,41 @@ def write_atlas(
     Args:
         header: lines describing the model, printed on the first summary page.
     """
-    n_summary = max(-(-len(slices) // SUMMARY_ROWS), 1)
+    # Every slice is followed by its zooms, titled with the slice's page
+    pages: list[tuple[Slice, str]] = []
+    n_pages = len(slices) + sum(len(item.zooms) for item in slices)
+    n_summary = max(-(-n_pages // SUMMARY_ROWS), 1)
+    for item in slices:
+        number = n_summary + len(pages) + 1
+        pages.append((item, f"{number}. {item.title}" if item.title else ""))
+        for k, zoom in enumerate(item.zooms, 1):
+            pages.append((zoom, f"{number + k}. Zoom {zoom.title} (page {number})"))
     with PdfPages(path, metadata={"Title": "RadModeling atlas"}) as pdf:
         for page in range(n_summary):
             first = page * SUMMARY_ROWS
             fig = _summary_figure(
-                slices[first : first + SUMMARY_ROWS],
-                first_page=n_summary + first + 1,
+                pages[first : first + SUMMARY_ROWS],
                 header=header if page == 0 else (),
                 page=(page + 1, n_summary),
             )
             pdf.savefig(fig)
             plt.close(fig)
-        for number, item in enumerate(slices, n_summary + 1):
+        for number, (item, title) in enumerate(pages, n_summary + 1):
+            markers = [
+                replace(m, label=f"{m.label} (p. {number + ord(m.label) - 64})")
+                if m.label
+                else m
+                for m in item.markers
+            ]
             fig = slice_figure(
-                item.result,
-                slots,
-                material_names,
-                item.outlines,
-                f"{number}. {item.title}" if item.title else "",
+                item.result, slots, material_names, item.outlines, title, markers
             )
             pdf.savefig(fig, bbox_inches="tight")
             plt.close(fig)
 
 
 def _summary_figure(
-    slices: Sequence[Slice],
-    first_page: int,
+    pages: Sequence[tuple[Slice, str]],
     header: Sequence[str],
     page: tuple[int, int],
 ) -> Figure:
@@ -259,13 +305,14 @@ def _summary_figure(
 
     columns = ["Page", "Slice", "No cell", "Overlap", "Mismatch"]
     rows, colours = [], []
-    for number, item in enumerate(slices, first_page):
+    for item, title in pages:
         r = item.result
         mismatch = r.mismatch_pixels
         counts = [r.lost_pixels, r.overlap_pixels, mismatch]
-        rows.append(
-            [str(number), item.title, *("-" if c is None else str(c) for c in counts)]
-        )
+        number, _, title = title.partition(". ")
+        if title.startswith("Zoom "):
+            title = "    " + title
+        rows.append([number, title, *("-" if c is None else str(c) for c in counts)])
         colours.append([TEXT, TEXT, *(CRITICAL if c else TEXT for c in counts)])
     ax = fig.add_axes((0.08, 0.04, 0.84, top - 0.05))
     ax.axis("off")

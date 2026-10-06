@@ -39,7 +39,11 @@ keep all code in `radmodeling`.
   adds the point classifier: surfaces, macrobodies, TR, complements, LIKE BUT, and
   conservative bounding boxes so cells/surfaces are only evaluated where needed.
 - `compare.py` estimates MCNP volume as mesh volume + (MCNP-only − CAD-only) samples,
-  which is unbiased and only noisy where CAD and MCNP disagree.
+  which is unbiased and only noisy where CAD and MCNP disagree. It also measures
+  overlaps between instances (`TaggedCells`: each pair once, from the denser side).
+  `atlas` reruns it with `locate=True` and slices through the clustered problem
+  points (`Spot`); slice mismatches within `SURFACE_TOLERANCE` of agreement are
+  tessellation noise and dropped.
 - `src/radmodeling/spaceclaim/*.py` are IronPython 2.7 scripts (no f-strings, no type
   hints, SpaceClaim API names are injected globals, helpers prefixed `rm_`). They are
   run through loaders written by `radmod spaceclaim-loaders`. They cannot be tested

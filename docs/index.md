@@ -38,7 +38,7 @@ machine_simplified.step ──radmod check──▶ volumes, tori, splines, inva
 model.mcnp ──radmod compare───▶ CAD vs MCNP volumes, density correction factors
            ──radmod materials─▶ materials and densities in the cells
            ──radmod slice─────▶ slice plots with the CAD overlaid
-           ──radmod atlas─────▶ PDF of slices: whole model + worst instances
+           ──radmod atlas─────▶ PDF of slices: whole model + every problem
 ```
 
 ## What it gives you

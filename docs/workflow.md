@@ -164,8 +164,7 @@ the converter has an option for it, and convert the STEP file as written by
 ## 6. Compare CAD and MCNP
 
 ```bash
-radmod compare machine_for_conversion.step model.mcnp -r machine_registry.csv \
-    --report compare.csv
+radmod compare machine_for_conversion.step model.mcnp -r machine_registry.csv
 ```
 
 For every instance, random points are classified against both the CAD solids and the
@@ -183,9 +182,17 @@ the instances of component 3 and instance 2 of component 7. This gives:
   volume. Above the `--threshold` (1 % by default) the component is reported.
 * a warning when the cells reach the border of the sampled boxes, meaning they extend
   well beyond the CAD solids.
+* the **overlaps**: the volume the cells of the instance share with the cells of other
+  instances, or with each other. A clash in the CAD (a bolt left inside a plate)
+  converts faithfully: each instance agrees with its own cells, but the cells overlap.
 
 Instances of the STEP file without tagged cells are reported with a 100 %
 discrepancy, and cell tags of instances that are not in the STEP file are listed.
+
+The full results are written to `model_compare.csv` next to `model.mcnp` (or to
+`--report`), where the atlas finds them. With `--components` no report is written
+unless `--report` is given: a partial report would hide the other instances from the
+atlas.
 
 ## 7. Assign the materials
 
@@ -238,23 +245,41 @@ For a document that covers the whole model, write an atlas:
 
 ```bash
 radmod atlas model_materials.mcnp --step machine_for_conversion.step -o atlas.pdf \
-    --planes x:3,y:3,z:6 --report compare.csv --worst 20
+    --planes x:3,y:3,z:6 --worst 20
 ```
 
-The PDF has:
+With the STEP file from `export`, the atlas first searches every instance for
+problems in 3D, sampling it like `compare` does (`--points`): CAD/MCNP mismatches
+beyond `--threshold` and overlapping cells. Slices alone would only find the problems
+their planes happen to cut. The PDF has:
 
-* **summary pages** with one row per slice: the pixels in no cell, in several cells
+* **summary pages** with one row per page: the pixels in no cell, in several cells
   and where CAD and MCNP disagree, problems in red;
 * **overview slices**: `--planes x:3,y:3,z:6` cuts the CAD bounding box with 3 evenly
   spaced planes normal to x, 3 normal to y and 6 normal to z, never on its faces;
-* **problem slices**: with the `--report` written by `compare`, one page for each of
-  the `--worst` instances beyond `--threshold`, worst first, after those that could
-  not be evaluated or have no tagged cells. Each cuts the instance through its
-  centre, normal to its thinnest direction so that it shows its largest section,
-  zoomed on it with some surroundings.
+* **problem slices** for the `--worst` instances with problems, worst first: one
+  slice through each problem found (up to three per kind), normal to its thinnest
+  direction, with the instance around it. Instances that could not be evaluated or
+  have no tagged cells are cut through their centre instead;
+* **zooms**: clusters of problem pixels too small to see on a slice are circled and
+  labelled (A, B, C) with the page of their zoom, which slices the same plane around
+  them and names the overlapping cells or the instances CAD and MCNP disagree on.
+
+When `compare` has run on the same geometry, the atlas uses its report instead of
+searching every instance: only the instances it reports are searched again, to locate
+their problems. The report of `model.mcnp` is `model_compare.csv`, and it is also
+used for `model_materials.mcnp` (any `model_*.mcnp`), since `materials` changes no
+geometry. `--report` gives another one, `--no-report` searches every instance.
+
+!!! warning "The report must match the geometry"
+    The atlas does not check where the report comes from: it says which one it uses,
+    and you must make sure it was written by `compare` on the current geometry and
+    STEP file. After converting again or changing the CAD, run `compare` again (or
+    use `--no-report`): an outdated report makes the atlas search the wrong instances
+    and miss new problems.
 
 Materials keep the same colour on every page. `--resolution` (400 pixels across by
 default, half that of `slice`) trades detail for time: every page classifies all its
-pixels against the MCNP cells and the CAD. A few isolated mismatching pixels along
-the CAD outlines are normal: they are pixels on the surfaces, where the tessellated
-CAD and the exact MCNP surfaces differ by less than a pixel.
+pixels against the MCNP cells and the CAD. Pixels where CAD and MCNP disagree by less
+than 0.1 mm are not mismatches: they are pixel centres on a surface, between the
+tessellated CAD and the exact MCNP surface.
