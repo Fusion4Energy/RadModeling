@@ -60,6 +60,9 @@ can be missed, so raise `--points` to look closer. `--components 3,7.2` limits i
 to some components (all instances of 3, instance 2 of 7), `--points` sets the
 samples per instance (100 000 by default).
 
+The MCNP volumes go into the registry with the density correction factors they give
+(`dcf`), except the factors edited by hand, which are kept and listed.
+
 ### materials
 
 ```bash
@@ -67,8 +70,8 @@ radmod materials MODEL.mcnp -r REGISTRY -l LIBRARY.toml
 ```
 
 Materials, densities and density correction factors in the tagged cells.
-Corrections closer to 1 than `--dcf-min` (0.1 %) or than three times their
-uncertainty are not applied. Components whose material is `void` (any case) get
+The correction factors are the registry's `dcf` column, written by `compare` or by
+hand; `--no-dcf` ignores them. Components whose material is `void` (any case) get
 material 0 and no density in all their cells; they need no library entry.
 
 ### slice

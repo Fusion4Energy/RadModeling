@@ -352,15 +352,12 @@ def materials(
         bool,
         typer.Option(help="Apply density correction factors from the MCNP volumes."),
     ] = True,
-    dcf_min: Annotated[
-        float,
-        typer.Option(help="Smallest density correction applied [%]."),
-    ] = 0.1,
 ) -> None:
     """Assign materials and densities (with DCF) to the tagged cells.
 
-    Density correction factors closer to 1 than --dcf-min, or than three times their
-    own uncertainty, are not applied: they cannot be told apart from 1.
+    The density correction factors are the registry's 'dcf' column: written by
+    'compare' (1 where the correction is below 0.1 % or three times its own
+    uncertainty) or edited by hand.
     """
     from radmodeling.mcnp.geometry import read_model
     from radmodeling.mcnp.materials import (
@@ -368,7 +365,7 @@ def materials(
         MaterialLibrary,
         assign_materials,
     )
-    from radmodeling.registry import Registry
+    from radmodeling.registry import DCF_MIN, Registry
 
     output = output or mcnp.with_name(f"{mcnp.stem}_materials{mcnp.suffix}")
     registry = _registry(registry, [mcnp])
@@ -380,7 +377,6 @@ def materials(
             Registry.load(registry),
             MaterialLibrary.load(library),
             use_dcf=dcf,
-            dcf_min=dcf_min / 100,
         )
     except AssignmentError as exc:
         _fail(str(exc))
@@ -406,8 +402,11 @@ def materials(
         console.print(
             f"Density correction factors applied: {len(report.dcf_applied)}; "
             f"negligible, left at 1: {len(report.dcf_negligible)} (closer to 1 than "
-            f"{dcf_min:g} % or three times their uncertainty)"
+            f"{DCF_MIN:.1%} or three times their uncertainty)"
         )
+        if report.dcf_manual:
+            keys = ", ".join(map(str, report.dcf_manual))
+            console.print(f"Density correction factors edited by hand: {keys}")
     for key, value in report.dcf_out_of_range:
         console.print(f"[yellow]Component {key}: unusual DCF {value:.3f}[/]")
     console.print(f"[green]Written[/] {esc(str(output))}")
@@ -556,12 +555,20 @@ def compare(
 
     if registry and not no_registry:
         reg = Registry.load(registry)
-        for r in results:
-            if r.key in reg and not r.error:
-                reg[r.key].mcnp_volume_cm3 = r.mcnp_volume_cm3
-                reg[r.key].mcnp_volume_std_cm3 = r.mcnp_volume_std_cm3
+        manual = [
+            r.key
+            for r in results
+            if r.key in reg
+            and not r.error
+            and reg[r.key].set_mcnp_volume(r.mcnp_volume_cm3, r.mcnp_volume_std_cm3)
+        ]
         reg.save(registry)
-        console.print(f"MCNP volumes saved in {esc(str(registry))} (used for the DCF).")
+        console.print(f"MCNP volumes and DCFs saved in {esc(str(registry))}.")
+        if manual:
+            console.print(
+                "[yellow]DCFs edited by hand, kept (clear them to recompute):[/] "
+                + ", ".join(map(str, manual))
+            )
     if report is None and not components:
         report = mcnp.with_name(mcnp.stem + REPORT_SUFFIX)
     if report:

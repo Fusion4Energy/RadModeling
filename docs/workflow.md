@@ -71,7 +71,7 @@ of the same component can have different materials.
 | `simplified_volume_cm3`, `simplified_solids` | Written by `check` and `export`.                                                                                               |
 | `volume_diff_pct`                            | Simplified vs original volume. Computed.                                                                                       |
 | `mcnp_volume_cm3`, `mcnp_volume_std_cm3`     | Volume of the component's MCNP cells and its statistical uncertainty (one standard deviation), written by `compare`.           |
-| `dcf`                                        | Density correction factor, original volume / MCNP volume. Computed.                                                            |
+| `dcf`                                        | Density correction factor applied by `materials`. Written by `compare`, can be edited by hand (see step 7).                    |
 | `status`                                     | `deleted` if the instance is no longer in the model, `new` if it was added after `init`.                                       |
 | `comment`                                    | Free text.                                                                                                                     |
 | `x_cm`, `y_cm`, `z_cm`                       | Centre of mass of the original instance, written by `init`. It tells the instances apart after the simplification.             |
@@ -182,7 +182,8 @@ the instances of component 3 and instance 2 of component 7. This gives:
 
 * the **MCNP volume** of the component with its uncertainty. The estimate only depends
   on the points where CAD and MCNP disagree, so it is very precise when the conversion
-  is good. It goes into the registry and sets the density correction factor.
+  is good. It goes into the registry with the density correction factor it gives
+  (`dcf`, see [Assign the materials](#7-assign-the-materials)).
 * the **discrepancy**: the volume where CAD and MCNP disagree, relative to the CAD
   volume. Above the `--threshold` (1 % by default) the component is reported.
 * a warning when the cells reach the border of the sampled boxes, meaning they extend
@@ -210,15 +211,25 @@ cell (density × DCF, as mass density). Every problem (components without materi
 unknown materials, tags of components not in the registry...) is reported at once so
 the registry can be fixed in one go.
 
-Density correction factors that cannot be told apart from 1 are not applied: those
-closer to 1 than `--dcf-min` (0.1 % by default) and those within three standard
-deviations of 1, from the uncertainty of the MCNP volume. Such corrections are below
-the accuracy of the comparison, and applying them would only change the densities in
+The DCF applied is the `dcf` column of the registry, so what the registry shows is
+what goes into the input. `compare` writes it, and no other command changes it.
+Corrections that cannot be told apart from 1 are written as exactly 1: those closer
+to 1 than 0.1 % and those within three standard deviations of 1, from the
+uncertainty of the MCNP volume. Such corrections are below the
+accuracy of the comparison, and applying them would only change the densities in
 their last digits at every new `compare`. Larger corrections are always applied,
 however small: the volume removed when simplifying a component is real missing mass,
-usually in the same direction for all components, and it adds up. The registry still
-shows every `dcf`, and the command reports how many were applied and how many left
-at 1. Use `--no-dcf` to ignore the density correction factors altogether.
+usually in the same direction for all components, and it adds up. This is why
+components within the `check` tolerance can still get a DCF other than 1. The
+command reports how many corrections were applied and how many left at 1. Use
+`--no-dcf` to ignore the density correction factors altogether.
+
+A `dcf` can be edited by hand, for instance to 1 for a component whose MCNP volume is
+not trusted. A new `compare` keeps a factor that differs from the one its volumes
+give, and lists it; empty the cell to have it computed again. A hand-written value
+equal to the computed one cannot be told apart from it, and is updated like any
+other. `materials` lists the factors edited by hand. To give a component its real
+mass, set `mass_g` instead: the DCF then brings the mass of its cells to that value.
 
 The material library is a TOML file:
 

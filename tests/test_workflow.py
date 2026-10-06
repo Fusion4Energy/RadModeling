@@ -347,6 +347,7 @@ def make_registry():
                 material="SS316L",
                 mcnp_volume_cm3=150,
                 original_volume_cm3=157.08,
+                dcf=157.08 / 150,
             ),
             Component(
                 3, "Ball", material="tungsten", mass_g=1000, original_volume_cm3=50
@@ -403,7 +404,9 @@ def test_assign_materials_void(library_file):
 def test_negligible_dcf_are_not_applied(library_file, mcnp_volume, std, applied):
     registry = make_registry()
     ball = registry[3, 1]
-    ball.mcnp_volume_cm3, ball.mcnp_volume_std_cm3 = mcnp_volume, std
+    # The registry shows the factor that is applied, not the raw volume ratio
+    assert not ball.set_mcnp_volume(mcnp_volume, std or 0.0)
+    assert ball.dcf == pytest.approx(50 / mcnp_volume if applied else 1)
     model = migjorn.parse(models.mcnp_text())
     report = assign_materials(model, registry, MaterialLibrary.load(library_file))
     dcf = 50 / mcnp_volume if applied else 1
@@ -411,6 +414,41 @@ def test_negligible_dcf_are_not_applied(library_file, mcnp_volume, std, applied)
     assert ((3, 1) in report.dcf_applied) == applied
     assert ((3, 1) in report.dcf_negligible) != applied
     assert report.dcf_applied[:1] == [(2, 1)]  # the pipe: 4.7 %
+    assert report.dcf_manual == []
+
+
+def test_manual_dcf_is_kept(library_file, tmp_path):
+    registry = make_registry()
+    ball = registry[3, 1]
+    assert not ball.set_mcnp_volume(49.0, 0.1)
+    ball.dcf = 1.0  # by hand: the MCNP volume is not trusted
+
+    # Saving and loading do not recompute it, a new 'compare' keeps it
+    path = tmp_path / "registry.csv"
+    registry.save(path)
+    registry = Registry.load(path)
+    ball = registry[3, 1]
+    assert ball.dcf == 1.0 and ball.manual_dcf
+    assert ball.set_mcnp_volume(48.0, 0.1)
+    assert ball.dcf == 1.0 and ball.mcnp_volume_cm3 == 48.0
+
+    model = migjorn.parse(models.mcnp_text())
+    report = assign_materials(model, registry, MaterialLibrary.load(library_file))
+    assert cell(model, 3).density == pytest.approx(-20)
+    assert report.dcf_manual == [(3, 1)]
+
+    # Cleared, the next 'compare' writes the computed one again
+    ball.dcf = None
+    assert not ball.set_mcnp_volume(48.0, 0.1)
+    assert ball.dcf == pytest.approx(50 / 48) and not ball.manual_dcf
+
+
+def test_dcf_without_mcnp_volume_is_manual():
+    ball = make_registry()[3, 1]
+    ball.dcf = 1.1
+    assert ball.manual_dcf
+    assert ball.set_mcnp_volume(49.0, 0.1)
+    assert ball.dcf == 1.1
 
 
 def test_material_library_rejects_unknown_keys(tmp_path):

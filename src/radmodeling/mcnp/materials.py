@@ -21,18 +21,12 @@ from dataclasses import dataclass, field
 import migjorn
 
 from radmodeling.mcnp.tags import cells_by_instance
-from radmodeling.registry import Component, Key, Registry
+from radmodeling.registry import Key, Registry
 
 if sys.version_info >= (3, 11):
     import tomllib
 else:  # pragma: no cover
     import tomli as tomllib
-
-# Density correction factors closer to 1 than this, or than DCF_SIGMAS times their
-# uncertainty, are not applied: they cannot be told apart from 1, and applying them
-# would only change densities in their last digits at every new 'compare'
-DCF_MIN = 1e-3
-DCF_SIGMAS = 3.0
 
 
 @dataclass
@@ -85,6 +79,7 @@ class AssignmentReport:
     dcf_out_of_range: list[tuple[Key, float]] = field(default_factory=list)
     dcf_applied: list[Key] = field(default_factory=list)
     dcf_negligible: list[Key] = field(default_factory=list)
+    dcf_manual: list[Key] = field(default_factory=list)  # edited by hand
     void_components: int = 0
 
 
@@ -98,13 +93,15 @@ def assign_materials(
     library: MaterialLibrary,
     use_dcf: bool = True,
     dcf_range: tuple[float, float] = (0.8, 1.25),
-    dcf_min: float = DCF_MIN,
 ) -> AssignmentReport:
     """Write materials and densities into the tagged cells of a model.
 
     Each instance of a component gets the material and density of its own row. Its
     cells are found by the ``[rmID.instance]`` tags in their comments (see
     :mod:`radmodeling.mcnp.tags`).
+
+    The density is multiplied by the registry's ``dcf``, as written by 'compare'
+    (1 where it cannot be told apart from 1) or edited by hand.
 
     Every problem found (unknown components, missing materials or densities) is
     collected and raised together in a single :class:`AssignmentError`, so that the
@@ -162,13 +159,14 @@ def assign_materials(
             continue
 
         dcf = 1.0
-        if use_dcf and component.mcnp_volume_cm3 and component.original_volume_cm3:
-            dcf = component.original_volume_cm3 / component.mcnp_volume_cm3
+        if use_dcf and component.dcf is not None:
+            dcf = component.dcf
             if not dcf_range[0] <= dcf <= dcf_range[1]:
                 report.dcf_out_of_range.append((key, dcf))
-            if _negligible(dcf, component, dcf_min):
+            if component.manual_dcf:
+                report.dcf_manual.append(key)
+            if dcf == 1.0:
                 report.dcf_negligible.append(key)
-                dcf = 1.0
             else:
                 report.dcf_applied.append(key)
 
@@ -198,12 +196,3 @@ def assign_materials(
         if material.number not in defined:
             report.missing_cards.append(material.number)
     return report
-
-
-def _negligible(dcf: float, component: Component, dcf_min: float) -> bool:
-    """Whether a density correction factor cannot be told apart from 1."""
-    deviation = abs(dcf - 1)
-    if deviation < dcf_min:
-        return True
-    std, volume = component.mcnp_volume_std_cm3, component.mcnp_volume_cm3
-    return bool(std and volume and deviation < DCF_SIGMAS * dcf * std / volume)

@@ -61,6 +61,13 @@ def find_key(name: str) -> Key | None:
 
 VOID = "void"
 
+# Density correction factors closer to 1 than this, or than DCF_SIGMAS times their
+# uncertainty, are written as 1: they cannot be told apart from 1, and keeping them
+# would only change densities in their last digits at every new 'compare'. The
+# registry shows the factor that 'materials' applies, never a raw volume ratio
+DCF_MIN = 1e-3
+DCF_SIGMAS = 3.0
+
 
 class Key(NamedTuple):
     """Identifies a registry row: the component ID and the instance number."""
@@ -94,14 +101,14 @@ class Component:
     volume_diff_pct: float | None = None  # computed
     mcnp_volume_cm3: float | None = None
     mcnp_volume_std_cm3: float | None = None  # statistical uncertainty (1 sigma)
-    dcf: float | None = None  # computed
+    dcf: float | None = None  # written by 'compare', can be edited by hand
     status: str = ""
     comment: str = ""
     x_cm: float | None = None  # centre of mass of the original body
     y_cm: float | None = None
     z_cm: float | None = None
 
-    COMPUTED = ("volume_diff_pct", "dcf")
+    COMPUTED = ("volume_diff_pct",)
 
     @property
     def key(self) -> Key:
@@ -134,9 +141,38 @@ class Component:
                 self.simplified_volume_cm3 - self.original_volume_cm3
             ) / self.original_volume_cm3
             self.volume_diff_pct = round(diff * 100, 3) + 0.0  # + 0.0 avoids -0.0
-        self.dcf = None
-        if self.original_volume_cm3 and self.mcnp_volume_cm3:
-            self.dcf = self.original_volume_cm3 / self.mcnp_volume_cm3
+
+    def density_correction(self) -> float | None:
+        """Original volume / MCNP volume, or 1 when it cannot be told apart from 1."""
+        if not (self.original_volume_cm3 and self.mcnp_volume_cm3):
+            return None
+        dcf = self.original_volume_cm3 / self.mcnp_volume_cm3
+        deviation = abs(dcf - 1)
+        uncertainty = dcf * (self.mcnp_volume_std_cm3 or 0.0) / self.mcnp_volume_cm3
+        if deviation < DCF_MIN or deviation < DCF_SIGMAS * uncertainty:
+            return 1.0
+        return dcf
+
+    @property
+    def manual_dcf(self) -> bool:
+        """Whether the DCF was edited by hand: it is not the one of the volumes."""
+        if self.dcf is None:
+            return False
+        computed = self.density_correction()
+        # 1e-5: the volumes and the DCF are saved with 6 significant digits
+        return computed is None or not math.isclose(self.dcf, computed, rel_tol=1e-5)
+
+    def set_mcnp_volume(self, volume_cm3: float, std_cm3: float) -> bool:
+        """Store the MCNP volume from 'compare' and the DCF it gives.
+
+        A DCF edited by hand is kept (returns True): clearing it lets the next
+        'compare' write the computed one again.
+        """
+        manual = self.manual_dcf
+        self.mcnp_volume_cm3, self.mcnp_volume_std_cm3 = volume_cm3, std_cm3
+        if not manual:
+            self.dcf = self.density_correction()
+        return manual
 
 
 _FIELDS = [f.name for f in fields(Component) if f.name != "levels"]
