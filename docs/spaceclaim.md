@@ -130,9 +130,3 @@ reads and a value. Without the parameter, the tool uses its default.
 
 `VolumeTolerance` only reaches `radmod check` through *Check model*: run from a
 terminal, `radmod check` takes `--tolerance` (1 % by default).
-
-!!! note
-
-    These scripts run in SpaceClaim's IronPython 2.7 and cannot be tested outside
-    SpaceClaim. Keep them small: anything that can be computed from a STEP file
-    belongs in the Python package, where it is tested.
