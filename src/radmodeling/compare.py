@@ -7,6 +7,9 @@ against the MCNP cells of that component. This gives, without running MCNP:
   depends on the points where CAD and MCNP disagree (hence very small when the
   conversion is good). It is the volume needed for the density correction factor.
 * the volume where CAD and MCNP disagree, a direct measure of the conversion quality.
+* the volume the cells of the component share with the cells of other components (or
+  with each other). Clashes in the CAD, such as a bolt left inside a plate, convert
+  faithfully into overlapping cells that agree with their own CAD.
 
 Lengths: the CAD is in mm and MCNP in cm. Results are reported in cm and cm3.
 """
@@ -14,7 +17,7 @@ Lengths: the CAD is in mm and MCNP in cm. Results are reported in cm and cm3.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from OCP.TopoDS import TopoDS_Shape
@@ -38,6 +41,9 @@ class VolumeComparison:
     mcnp_only_cm3: float  # inside the cells but outside the CAD
     touches_sampling_box: bool  # the cells may extend beyond the sampled region
     error: str = ""
+    # Volume and its standard deviation shared with the cells of other instances
+    # (with its own key: cells of the instance overlapping each other)
+    overlaps: dict[Key, tuple[float, float]] = field(default_factory=dict)
 
     @property
     def discrepancy_pct(self) -> float:
@@ -47,11 +53,29 @@ class VolumeComparison:
         return (self.cad_only_cm3 + self.mcnp_only_cm3) / self.cad_volume_cm3 * 100
 
 
+class TaggedCells:
+    """The tagged cells of a geometry with their bounding boxes, to find the cells
+    of other instances near a component."""
+
+    def __init__(self, geometry: Geometry, cells: Mapping[Key, Sequence[int]]):
+        self.keys = [key for key, numbers in cells.items() for _ in numbers]
+        self.numbers = [n for numbers in cells.values() for n in numbers]
+        boxes = [geometry.cell_box(n) for n in self.numbers]
+        self.lo = np.array([b[0] if b else [-np.inf] * 3 for b in boxes]).reshape(-1, 3)
+        self.hi = np.array([b[1] if b else [np.inf] * 3 for b in boxes]).reshape(-1, 3)
+
+    def near(self, lo: np.ndarray, hi: np.ndarray) -> list[tuple[Key, int]]:
+        """Cells whose boxes intersect the box from lo to hi (cm)."""
+        index = np.flatnonzero(np.all((self.lo <= hi) & (self.hi >= lo), axis=1))
+        return [(self.keys[i], self.numbers[i]) for i in index]
+
+
 def compare_component(
     key: Key,
     solids: Sequence[TopoDS_Shape],
     cells: list[int],
     geometry: Geometry,
+    others: TaggedCells | None = None,
     n_points: int = 100_000,
     points_per_line: int = 20,
     margin: float = 0.05,
@@ -65,6 +89,9 @@ def compare_component(
     point is weighted by one over the number of boxes that contain it, which keeps
     every estimate unbiased where boxes overlap. Every box gets at least two lines, so
     instances with many solids can get a few more points than ``n_points``.
+
+    The cells in ``others`` (except those of ``key``) are checked for overlaps with
+    the cells of the instance.
     """
     rng = rng or np.random.default_rng()
     try:
@@ -99,12 +126,25 @@ def compare_component(
             )
 
     evaluator = geometry.evaluator(points.reshape(-1, 3) / MM_PER_CM)
-    in_cell = np.zeros(points.shape[0] * points.shape[1], dtype=bool)
+    cell_count = np.zeros(points.shape[0] * points.shape[1], dtype=np.int32)
     try:
         for cell in cells:
-            in_cell |= evaluator.cell(cell)
+            cell_count += evaluator.cell(cell)
     except ValueError as exc:
         return _failed(key, cells, cad_volume, str(exc))
+    in_cell = cell_count > 0
+    shared = {key: cell_count > 1} if np.any(cell_count > 1) else {}
+    if others is not None and np.any(in_cell):
+        inside = points.reshape(-1, 3)[in_cell] / MM_PER_CM
+        for other, cell in others.near(inside.min(axis=0), inside.max(axis=0)):
+            if other == key:
+                continue
+            try:
+                mask = in_cell & evaluator.cell(cell)
+            except ValueError:
+                continue  # reported when that instance is compared
+            if np.any(mask):
+                shared[other] = shared[other] | mask if other in shared else mask
     in_cell = in_cell.reshape(t.shape)
 
     cad_only = in_cad & ~in_cell
@@ -122,6 +162,10 @@ def compare_component(
         return estimate, float(box_volumes**2 @ (variance / n))
 
     difference, variance = integral(mcnp_only.astype(float) - cad_only)
+    overlaps = {}
+    for other, mask in sorted(shared.items()):
+        volume, overlap_variance = integral(mask.reshape(t.shape).astype(float))
+        overlaps[other] = (volume, float(np.sqrt(overlap_variance)))
 
     # Cells reaching the faces of the sampling boxes, away from any other box,
     # probably continue beyond them
@@ -138,6 +182,7 @@ def compare_component(
         cad_only_cm3=integral(cad_only.astype(float))[0],
         mcnp_only_cm3=integral(mcnp_only.astype(float))[0],
         touches_sampling_box=bool(np.any(in_cell & on_faces & (weight == 1))),
+        overlaps=overlaps,
     )
 
 

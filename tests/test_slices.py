@@ -44,19 +44,24 @@ def test_instance_plane_shows_the_largest_section():
 def test_read_problems_worst_first(tmp_path):
     report = tmp_path / "compare.csv"
     report.write_text(
-        "component_id,instance,cells,discrepancy_pct,touches_sampling_box,error\n"
-        "1,1,1,0.2,False,\n"
-        "2,1,2,5.0,False,\n"
-        "3,1,3,25.0,False,\n"
-        "4,1,4,0.1,True,\n"
-        "5,1,,nan,False,\n"
-        "6,2,7,nan,False,unknown surface 99\n"
+        "component_id,instance,cells,discrepancy_pct,touches_sampling_box,overlaps,"
+        "error\n"
+        "1,1,1,0.2,False,,\n"
+        "2,1,2,5.0,False,,\n"
+        "3,1,3,25.0,False,,\n"
+        "4,1,4,0.1,True,,\n"
+        "5,1,,nan,False,,\n"
+        "6,2,7,nan,False,,unknown surface 99\n"
+        "7,1,8,0.05,False,8.1:2.5 7.1:0.1,\n"
     )
     problems = read_problems(report, threshold=1)
-    assert [p.key for p in problems] == [(5, 1), (6, 2), (3, 1), (2, 1), (4, 1)]
+    assert [p.key for p in problems] == [
+        (5, 1), (6, 2), (3, 1), (2, 1), (4, 1), (7, 1)
+    ]  # fmt: skip
     assert problems[0].note == "no tagged cells"
     assert problems[1].note == "unknown surface 99"
     assert problems[4].note == "cells exceed the sampled box"
+    assert problems[5].note == "overlaps 8.1, 7.1"
     assert math.isnan(problems[0].discrepancy_pct)
     assert Key(1, 1) not in [p.key for p in problems]
 

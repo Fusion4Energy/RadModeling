@@ -204,6 +204,9 @@ def read_problems(report: str | os.PathLike, threshold: float = 1.0) -> list[Pro
                 notes.append("no tagged cells")
             if row.get("touches_sampling_box") == "True":
                 notes.append("cells exceed the sampled box")
+            if row.get("overlaps", "").strip():
+                others = [o.partition(":")[0] for o in row["overlaps"].split()]
+                notes.append("overlaps " + ", ".join(others))
             if math.isnan(discrepancy) or discrepancy > threshold or notes:
                 problems.append(Problem(key, discrepancy, "; ".join(notes)))
     problems.sort(

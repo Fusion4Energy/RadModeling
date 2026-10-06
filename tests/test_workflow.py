@@ -1,3 +1,4 @@
+import csv
 import json
 import math
 import os
@@ -13,7 +14,7 @@ from OCP.gp import gp_Pnt
 from radmodeling import workflow
 from radmodeling.cad.occ import GeometryMap, bounding_box, volume_and_centroid
 from radmodeling.cad.step import Part, read_step, write_step
-from radmodeling.compare import compare_component
+from radmodeling.compare import TaggedCells, compare_component
 from radmodeling.mcnp.geometry import Geometry
 from radmodeling.mcnp.materials import (
     AssignmentError,
@@ -532,6 +533,71 @@ def test_compare_flags_cells_beyond_the_cad():
         Key(3), [models.ball()], [3], Geometry(migjorn.parse(text)), n_points=20_000
     )
     assert result.touches_sampling_box
+
+
+def test_compare_measures_overlaps_with_other_instances():
+    """Rods 0.8 cm apart: their cells share a lens 2 cm tall."""
+    text = TWO_RODS.replace("4 c/z 1.05 0 0.5", "4 c/z 0.8 0 0.5")
+    geometry = Geometry(migjorn.parse(text))
+    tagged = TaggedCells(geometry, {Key(1): [1], Key(2): [2]})
+    lens = 2 * (2 * 0.5**2 * math.acos(0.8) - 0.4 * math.sqrt(1 - 0.8**2))
+    result = compare_component(
+        Key(1), [models.cylinder(0, 0, 0, 5, 20)], [1], geometry, tagged,
+        n_points=40_000, rng=np.random.default_rng(5),
+    )  # fmt: skip
+    volume, std = result.overlaps[Key(2)]
+    assert 0 < std < 0.15 * lens
+    assert volume == pytest.approx(lens, abs=4 * std)
+    assert list(result.overlaps) == [Key(2)]  # its own cells are not in the others
+
+    # Cells of the same instance overlapping each other
+    both = [models.cylinder(0, 0, 0, 5, 20), models.cylinder(8, 0, 0, 5, 20)]
+    result = compare_component(
+        Key(1), both, [1, 2], geometry, n_points=40_000, rng=np.random.default_rng(6)
+    )
+    volume, std = result.overlaps[Key(1)]
+    assert volume == pytest.approx(lens, abs=4 * std)
+
+
+def test_compare_ignores_cells_that_only_touch():
+    geometry = Geometry(migjorn.parse(models.mcnp_text()))
+    tagged = TaggedCells(geometry, {Key(1): [1], Key(2): [2], Key(3): [3]})
+    result = compare_component(
+        Key(1), [models.block()], [1], geometry, tagged, n_points=20_000
+    )
+    assert result.overlaps == {}
+
+
+def test_cli_compare_reports_overlapping_pairs_once(tmp_path, cad_model):
+    from typer.testing import CliRunner
+
+    from radmodeling.cli import app
+
+    runner = CliRunner()
+
+    def run(*args):
+        result = runner.invoke(app, [str(a) for a in args])
+        assert result.exit_code == 0, result.output
+        return result.output
+
+    run("init", cad_model)
+    exported = tmp_path / "export.step"
+    run("export", cad_model.with_name("machine_simplified.step"), "-o", exported)
+    mcnp = tmp_path / "model.mcnp"
+    # The first bolt moved into the block: its cell clashes with the block's
+    mcnp.write_text(models.mcnp_text().replace("12 c/z 15 0 0.5", "12 c/z 9.5 5 0.5"))
+    report = tmp_path / "compare.csv"
+    output = run(
+        "compare", exported, mcnp, "--no-registry", "--points", "20000",
+        "--seed", "2", "--report", report,
+    )  # fmt: skip
+    assert "Overlapping instances" in output
+    assert "1 overlapping pairs" in output
+    rows = list(csv.DictReader(report.open()))
+    overlaps = {row["component_id"]: row["overlaps"] for row in rows}
+    assert overlaps["1"].startswith("4.1:")  # the bolt's CAD is elsewhere: only the
+    # block's sampling sees the overlap
+    assert overlaps["2"] == overlaps["3"] == ""
 
 
 def test_cli_pipeline(tmp_path, cad_model, library_file):

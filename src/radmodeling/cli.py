@@ -445,7 +445,7 @@ def compare(
     Gives the MCNP volume of each instance (for the density correction factors) and
     the volume where CAD and MCNP disagree.
     """
-    from radmodeling.compare import compare_component
+    from radmodeling.compare import TaggedCells, compare_component
     from radmodeling.mcnp.geometry import Geometry
     from radmodeling.mcnp.tags import cells_by_instance
     from radmodeling.registry import Key, Registry
@@ -484,6 +484,7 @@ def compare(
         keys = {Key.parse(t) for t in wanted if "." in t}
         selected = [k for k in selected if k.id in ids or k in keys]
     rng = np.random.default_rng(seed)
+    tagged = TaggedCells(geometry, cells)
 
     results = []
     with console.status("") as status:
@@ -495,6 +496,7 @@ def compare(
                     solids[key],
                     cells.get(key, []),
                     geometry,
+                    tagged,
                     n_points=points,
                     rng=rng,
                 )
@@ -526,8 +528,31 @@ def compare(
         )
     if problems:
         console.print(table)
-    good = len(results) - len(problems)
-    console.print(f"[green]{good} instances agree[/], {len(problems)} with problems.")
+
+    # Each pair is measured by both instances: keep the more precise estimate
+    pairs: dict[tuple[Key, Key], tuple[float, float]] = {}
+    for r in results:
+        for other, (volume, std) in r.overlaps.items():
+            pair = (min(r.key, other), max(r.key, other))
+            if pair not in pairs or std < pairs[pair][1]:
+                pairs[pair] = (volume, std)
+    overlap_table = Table(title="Overlapping instances")
+    for column in ("ID", "ID", "Overlap cm3"):
+        overlap_table.add_column(column)
+    for (a, b), (volume, std) in sorted(pairs.items(), key=lambda p: -p[1][0]):
+        overlap_table.add_row(
+            str(a), "itself" if a == b else str(b), f"{volume:.3g} ± {std:.2g}"
+        )
+    if pairs:
+        console.print(overlap_table)
+
+    overlapping = {k for pair in pairs for k in pair}
+    bad = {r.key for r in problems} | overlapping
+    console.print(
+        f"[green]{len(results) - len(bad)} instances agree[/], "
+        f"{len(problems)} with discrepancies, "
+        f"[{'red' if pairs else 'green'}]{len(pairs)} overlapping pairs[/]."
+    )
 
     if registry and not no_registry:
         reg = Registry.load(registry)
@@ -552,6 +577,7 @@ def compare(
                     "mcnp_only_cm3",
                     "discrepancy_pct",
                     "touches_sampling_box",
+                    "overlaps",
                     "error",
                 ]
             )
@@ -568,6 +594,9 @@ def compare(
                         r.mcnp_only_cm3,
                         r.discrepancy_pct,
                         r.touches_sampling_box,
+                        " ".join(
+                            f"{k}:{volume:.6g}" for k, (volume, _) in r.overlaps.items()
+                        ),
                         r.error,
                     ]
                 )
