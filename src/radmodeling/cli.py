@@ -287,7 +287,7 @@ def export(
         typer.Option(
             "--output",
             "-o",
-            help="STEP file to convert to MCNP. Default: NAME_for_conversion.step "
+            help="STEP file to convert to MCNP. Default: NAME_export.step "
             "next to NAME_registry.csv.",
         ),
     ] = None,
@@ -310,7 +310,7 @@ def export(
     reg = Registry.load(registry)
     if output is None:
         base = registry.name[: -len(REGISTRY_SUFFIX)]
-        output = registry.with_name(f"{base}_for_conversion.step")
+        output = registry.with_name(f"{base}_export.step")
     with console.status("Exporting..."):
         result = workflow.export(simplified, reg, output)
     reg.save(registry)

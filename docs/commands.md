@@ -39,7 +39,7 @@ Volume deviations and geometry diagnostics of a simplified model.
 radmod export SIMPLIFIED.step -r REGISTRY
 ```
 
-STEP file for the CAD-to-MCNP converter (`NAME_for_conversion.step` next to
+STEP file for the CAD-to-MCNP converter (`NAME_export.step` next to
 `NAME_registry.csv`, or `-o`), each solid named with its registry row
 (`[rm12.3] Bolt`). The converter copies the names into the cell comments, which is
 how `compare`, `materials` and `slice` find the cells of each component.
@@ -47,7 +47,7 @@ how `compare`, `materials` and `slice` find the cells of each component.
 ### compare
 
 ```bash
-radmod compare FOR_CONVERSION.step MODEL.mcnp
+radmod compare EXPORT.step MODEL.mcnp
 ```
 
 CAD vs MCNP volumes and discrepancies per instance, written to `MODEL_compare.csv`
@@ -84,7 +84,7 @@ is the centre of the image; `--step` overlays the CAD and, with the STEP file fr
 ### atlas
 
 ```bash
-radmod atlas MODEL.mcnp --step FOR_CONVERSION.step -o ATLAS.pdf
+radmod atlas MODEL.mcnp --step EXPORT.step -o ATLAS.pdf
 ```
 
 PDF with a summary of the problems of every slice, evenly spaced slices across the

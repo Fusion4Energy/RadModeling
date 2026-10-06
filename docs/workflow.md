@@ -13,9 +13,14 @@ A model goes through three STEP files, all named after the original:
 | ----------------------------- | -------------------------------------------------------- |
 | `machine.step`                | The original CAD, never changed.                         |
 | `machine_simplified.step`     | The model being simplified, written tagged by `init`.    |
-| `machine_for_conversion.step` | The input of the converter, written by `export`.         |
+| `machine_export.step`         | The input of the converter, written by `export`.         |
 
 Next to them, `machine_registry.csv` keeps the materials and the original volumes.
+
+After the conversion, each file is named after its input and the command that wrote
+it: GEOUNED names its output after the STEP file (`machine_export.mcnp`), then
+`compare` writes `machine_export_compare.csv` and `materials` writes
+`machine_export_materials.mcnp` next to it.
 
 ## 1. Tag the original model
 
@@ -142,7 +147,7 @@ Writes every solid as its own product, sorted by component ID and instance, and 
 with both: `[rm12.3] Bolt` is instance 3 of component 12. Unlike the component tags,
 which `init` puts at the end of the names, these tags come first: some converters cut
 or drop the end of long names. Instances are unlinked here, as converters need every
-solid on its own. The output is `machine_for_conversion.step`, named after the
+solid on its own. The output is `machine_export.step`, named after the
 registry (`-o` writes it elsewhere). Convert it with GEOUNED or similar.
 
 The converter copies the name of each solid into a comment on its cell. GEOUNED
@@ -151,7 +156,7 @@ writes the CAD path of the solid:
 ```text
 103   10  -7.9300000 -11 12
            imp:n=1.0   imp:p=1.0
-           $/machine_for_conversion/[rm12.3] Bolt1
+           $/machine_export/[rm12.3] Bolt1
 ```
 
 This tag is the link between the cell and its registry row. It stays with the cell
@@ -164,7 +169,7 @@ the converter has an option for it, and convert the STEP file as written by
 ## 6. Compare CAD and MCNP
 
 ```bash
-radmod compare machine_for_conversion.step model.mcnp -r machine_registry.csv
+radmod compare machine_export.step machine_export.mcnp -r machine_registry.csv
 ```
 
 For every instance, random points are classified against both the CAD solids and the
@@ -189,7 +194,7 @@ the instances of component 3 and instance 2 of component 7. This gives:
 Instances of the STEP file without tagged cells are reported with a 100 %
 discrepancy, and cell tags of instances that are not in the STEP file are listed.
 
-The full results are written to `model_compare.csv` next to `model.mcnp` (or to
+The full results are written to `machine_export_compare.csv` next to `machine_export.mcnp` (or to
 `--report`), where the atlas finds them. With `--components` no report is written
 unless `--report` is given: a partial report would hide the other instances from the
 atlas.
@@ -197,10 +202,10 @@ atlas.
 ## 7. Assign the materials
 
 ```bash
-radmod materials model.mcnp -r machine_registry.csv -l materials.toml
+radmod materials machine_export.mcnp -r machine_registry.csv -l materials.toml
 ```
 
-Writes `model_materials.mcnp` with the material number and density of every tagged
+Writes `machine_export_materials.mcnp` with the material number and density of every tagged
 cell (density × DCF, as mass density). Every problem (components without material,
 unknown materials, tags of components not in the registry...) is reported at once so
 the registry can be fixed in one go.
@@ -232,8 +237,8 @@ have no card in the input yet.
 ## 8. Look at it
 
 ```bash
-radmod slice model_materials.mcnp -o slice.png --normal z --origin 0,0,120 \
-    --width 400 --step machine_for_conversion.step
+radmod slice machine_export_materials.mcnp -o slice.png --normal z --origin 0,0,120 \
+    --width 400 --step machine_export.step
 ```
 
 Plots the MCNP cells coloured by material with the CAD section on top. Regions in no
@@ -244,7 +249,7 @@ slice covers the whole CAD model.
 For a document that covers the whole model, write an atlas:
 
 ```bash
-radmod atlas model_materials.mcnp --step machine_for_conversion.step -o atlas.pdf \
+radmod atlas machine_export_materials.mcnp --step machine_export.step -o atlas.pdf \
     --planes x:3,y:3,z:6 --worst 20
 ```
 
@@ -267,8 +272,8 @@ their planes happen to cut. The PDF has:
 
 When `compare` has run on the same geometry, the atlas uses its report instead of
 searching every instance: only the instances it reports are searched again, to locate
-their problems. The report of `model.mcnp` is `model_compare.csv`, and it is also
-used for `model_materials.mcnp` (any `model_*.mcnp`), since `materials` changes no
+their problems. The report of `machine_export.mcnp` is `machine_export_compare.csv`, and it is also
+used for `machine_export_materials.mcnp` (any `machine_export_*.mcnp`), since `materials` changes no
 geometry. `--report` gives another one, `--no-report` searches every instance.
 
 !!! warning "The report must match the geometry"

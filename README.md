@@ -19,14 +19,14 @@ machine.step ──radmod init──▶ machine_simplified.step + machine_regist
                     simplify in SpaceClaim (or any CAD program)
                                    │
 machine_simplified.step ──radmod check──▶ volumes, tori, splines, invalid solids
-                        ──radmod export─▶ machine_for_conversion.step
+                        ──radmod export─▶ machine_export.step
                                    │
                          GEOUNED (or another converter)
                                    │
-model.mcnp ──radmod compare───▶ CAD vs MCNP volumes, density correction factors
-           ──radmod materials─▶ materials and densities in the cells
-           ──radmod slice─────▶ slice plots with the CAD overlaid
-           ──radmod atlas─────▶ PDF of slices: whole model + worst instances
+machine_export.mcnp ──radmod compare───▶ CAD vs MCNP volumes, density correction factors
+                    ──radmod materials─▶ materials and densities in the cells
+                    ──radmod slice─────▶ slice plots with the CAD overlaid
+                    ──radmod atlas─────▶ PDF of slices: whole model + every problem
 ```
 
 * **Stable component IDs**: tags like `Pump casing [rm12]` in the component names
@@ -65,11 +65,11 @@ radmod init machine.step                       # tag + registry
 # simplify machine_simplified.step in SpaceClaim, save it back as STEP
 radmod check machine_simplified.step -r machine_registry.csv
 radmod export machine_simplified.step -r machine_registry.csv
-# convert machine_for_conversion.step to model.mcnp with GEOUNED
-radmod compare machine_for_conversion.step model.mcnp -r machine_registry.csv
-radmod materials model.mcnp -r machine_registry.csv -l materials.toml
-radmod slice model_materials.mcnp -o slice.png --normal z --step machine_for_conversion.step
-radmod atlas model_materials.mcnp --step machine_for_conversion.step -o atlas.pdf --report compare.csv
+# convert machine_export.step to machine_export.mcnp with GEOUNED
+radmod compare machine_export.step machine_export.mcnp -r machine_registry.csv
+radmod materials machine_export.mcnp -r machine_registry.csv -l materials.toml
+radmod slice machine_export_materials.mcnp -o slice.png --normal z --step machine_export.step
+radmod atlas machine_export_materials.mcnp --step machine_export.step -o atlas.pdf
 ```
 
 SpaceClaim tools: `radmod spaceclaim-loaders <folder>` and publish the loaders once.

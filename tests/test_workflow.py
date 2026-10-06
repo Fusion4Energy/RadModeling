@@ -657,7 +657,7 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
     assert "Instances beyond volume tolerance: 0" in output
 
     run("export", simplified)
-    exported = cad_model.with_name("machine_for_conversion.step")
+    exported = cad_model.with_name("machine_export.step")
     mcnp = tmp_path / "model.mcnp"
     # Renumbering the cells does not lose track of the components
     model = migjorn.parse(models.mcnp_text())

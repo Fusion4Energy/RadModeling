@@ -6,7 +6,7 @@ of component 12, and the converter writes the name of the solid of every cell as
 
     103  10  -7.93  -11 12
                imp:n=1.0   imp:p=1.0
-               $/machine_for_conversion/[rm12.3] Bolt1
+               $/machine_export/[rm12.3] Bolt1
 
 The tag travels with the cell card through any renumbering or editing, so the cells
 of a component are found by their tags alone, never by their numbers.
