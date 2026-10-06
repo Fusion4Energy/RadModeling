@@ -26,9 +26,11 @@ from radmodeling.cad.section import section_polylines
 from radmodeling.cad.step import read_step
 from radmodeling.compare import (
     MM_PER_CM,
+    Comparison,
     Plane,
     SliceResult,
     Spot,
+    VolumeComparison,
     classify_cad_on_plane,
     cluster_labels,
     near_plane,
@@ -260,6 +262,54 @@ def zoom_slices(
         item.title = f"{letter}: {describe_problems(scene, item)}"
         parent.zooms.append(item)
         parent.markers.append(Marker(*centre, radius, letter))
+
+
+@dataclass
+class Atlas:
+    """The work of an atlas, run by its worker processes: searching instances for
+    problems, then drawing the slices. Without comparison, only drawing."""
+
+    scene: Scene
+    comparison: Comparison | None
+    resolution: int
+
+    def search(self, key: Key) -> VolumeComparison:
+        assert self.comparison is not None
+        return self.comparison.compare(key)
+
+    def draw(self, page: tuple[str, Plane]) -> Slice:
+        title, plane = page
+        item = make_slice(self.scene, plane, self.resolution, title)
+        zoom_slices(self.scene, item, self.resolution)
+        return item
+
+
+def load_atlas(
+    mcnp: str | os.PathLike,
+    step: str | os.PathLike,
+    material_names: Mapping[int, str],
+    compared: Sequence[Key],
+    n_points: int,
+    entropy: int,
+    resolution: int,
+) -> Atlas:
+    """The atlas of a model, as its worker processes load it."""
+    scene = load_scene(mcnp, step, material_names)
+    return Atlas(
+        scene, scene_comparison(scene, compared, n_points, entropy), resolution
+    )
+
+
+def scene_comparison(
+    scene: Scene, compared: Sequence[Key], n_points: int, entropy: int
+) -> Comparison | None:
+    """The comparison that locates the problems of some instances, if possible."""
+    if not scene.compares:
+        return None
+    solids = {k: i.solids for k, i in scene.instances.items()}
+    return Comparison(
+        scene.geometry, solids, scene.cells, compared, n_points, entropy, locate=True
+    )
 
 
 def describe_problems(scene: Scene, item: Slice, max_points: int = 200) -> str:

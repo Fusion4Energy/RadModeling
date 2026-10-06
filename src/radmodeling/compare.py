@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from OCP.TopoDS import TopoDS_Shape
 
-from radmodeling.cad.mesh import LineFrame, TriMesh, inside_on_lines, triangulate
+from radmodeling.cad.mesh import LineFrame, inside_on_lines, mesh_of
 from radmodeling.cad.occ import bounding_box
 from radmodeling.mcnp.geometry import Geometry
 from radmodeling.registry import Key
@@ -177,7 +177,7 @@ def compare_component(
     """
     rng = rng or np.random.default_rng()
     try:
-        meshes = [triangulate(s) for s in solids]
+        meshes = [mesh_of(s) for s in solids]
     except ValueError as exc:
         return _failed(key, cells, float("nan"), f"CAD: {exc}")
     cad_volume = sum(m.volume for m in meshes) / 1000.0
@@ -296,6 +296,45 @@ def compare_component(
         overlaps=overlaps,
         spots=spots,
     )
+
+
+class Comparison:
+    """Compares instances with their cells, each with its own random points.
+
+    The points of an instance only depend on ``entropy`` and its key, not on the
+    other instances compared or on their order: the worker processes compare any
+    instance and get the same result.
+    """
+
+    def __init__(
+        self,
+        geometry: Geometry,
+        solids: Mapping[Key, Sequence[TopoDS_Shape]],
+        cells: Mapping[Key, Sequence[int]],
+        compared: Collection[Key],
+        n_points: int,
+        entropy: int,
+        locate: bool = False,
+    ):
+        self.geometry = geometry
+        self.solids = solids
+        self.cells = cells
+        self.tagged = TaggedCells(geometry, cells, solids, compared)
+        self.n_points = n_points
+        self.entropy = entropy
+        self.locate = locate
+
+    def compare(self, key: Key) -> VolumeComparison:
+        return compare_component(
+            key,
+            self.solids[key],
+            list(self.cells.get(key, [])),
+            self.geometry,
+            self.tagged,
+            n_points=self.n_points,
+            rng=np.random.default_rng([self.entropy, key.id, key.instance]),
+            locate=self.locate,
+        )
 
 
 def _spots(
@@ -531,7 +570,7 @@ def classify_cad_on_plane(
         for solid in solids:
             if not near_plane(solid, plane, half_diagonal):
                 continue
-            mesh: TriMesh = triangulate(solid)
+            mesh = mesh_of(solid)
             result[inside_on_lines(mesh, frame, line_uv, t)] = component_id
     return result
 

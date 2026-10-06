@@ -6,4 +6,6 @@ that block executables in the Python Scripts folder.
 
 from radmodeling.cli import app
 
-app(prog_name="python -m radmod")
+# Guarded: the worker processes of 'compare' and 'atlas' import this module again
+if __name__ == "__main__":
+    app(prog_name="python -m radmod")

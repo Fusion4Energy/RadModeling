@@ -558,7 +558,7 @@ def test_compare_reports_cad_that_cannot_be_meshed(monkeypatch):
     def fail(shape):
         raise ValueError("a face could not be tessellated")
 
-    monkeypatch.setattr(radmodeling.compare, "triangulate", fail)
+    monkeypatch.setattr(radmodeling.compare, "mesh_of", fail)
     geometry = Geometry(migjorn.parse(models.mcnp_text()))
     result = compare_component(Key(3), [models.ball()], [3], geometry, n_points=100)
     assert result.error == "CAD: a face could not be tessellated"
@@ -659,6 +659,32 @@ def test_cli_compare_reports_overlapping_pairs_once(tmp_path):
     assert overlaps["1"] == overlaps["2"] == overlaps["3"] == ""
     volume = float(overlaps["4"].partition(":")[2])
     assert volume == pytest.approx(math.pi * 0.5**2 * 2, rel=0.3)
+
+
+def test_cli_compare_with_workers_gives_the_same_results(tmp_path):
+    from typer.testing import CliRunner
+
+    from radmodeling.cli import app
+
+    step = models.write_clash_cad(tmp_path / "machine.step")
+    runner = CliRunner()
+    assert runner.invoke(app, ["init", str(step)]).exit_code == 0
+    exported = tmp_path / "export.step"
+    simplified = step.with_name("machine_simplified.step")
+    result = runner.invoke(app, ["export", str(simplified), "-o", str(exported)])
+    assert result.exit_code == 0, result.output
+    mcnp = tmp_path / "model.mcnp"
+    mcnp.write_text(models.clash_mcnp_text())
+    reports = []
+    for jobs in (1, 2):
+        report = tmp_path / f"compare_{jobs}.csv"
+        args = ["compare", exported, mcnp, "--no-registry", "--points", "5000",
+                "--seed", "3", "--report", report, "--jobs", jobs]  # fmt: skip
+        result = runner.invoke(app, [str(a) for a in args])
+        assert result.exit_code == 0, result.output
+        reports.append(report.read_text())
+    # Every instance has its own random points: the same in any worker
+    assert reports[0] == reports[1]
 
 
 def test_cli_pipeline(tmp_path, cad_model, library_file):

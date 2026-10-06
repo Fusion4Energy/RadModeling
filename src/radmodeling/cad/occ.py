@@ -80,16 +80,28 @@ class GeometryMap(Generic[T]):
         # OCP's == is object identity: hash to a bucket, then compare the TShape
         return self._buckets.setdefault(hash(shape.Located(TopLoc_Location())), [])
 
+    @staticmethod
+    def _same(a: TopoDS_Shape, b: TopoDS_Shape) -> bool:
+        return a.IsPartner(b)
+
     def get(self, shape: TopoDS_Shape) -> T | None:
-        return next((v for s, v in self._bucket(shape) if shape.IsPartner(s)), None)
+        return next((v for s, v in self._bucket(shape) if self._same(shape, s)), None)
 
     def __contains__(self, shape: TopoDS_Shape) -> bool:
-        return any(shape.IsPartner(s) for s, _ in self._bucket(shape))
+        return any(self._same(shape, s) for s, _ in self._bucket(shape))
 
     def __setitem__(self, shape: TopoDS_Shape, value: T) -> None:
         bucket = self._bucket(shape)
-        bucket[:] = [(s, v) for s, v in bucket if not shape.IsPartner(s)]
+        bucket[:] = [(s, v) for s, v in bucket if not self._same(shape, s)]
         bucket.append((shape, value))
+
+
+class ShapeMap(GeometryMap[T]):
+    """A dict keyed by shapes: their geometry and their placement."""
+
+    @staticmethod
+    def _same(a: TopoDS_Shape, b: TopoDS_Shape) -> bool:
+        return a.IsSame(b)
 
 
 def bounding_box(
@@ -105,6 +117,7 @@ def bounding_box(
 __all__ = [
     "GeometryMap",
     "LabelSequence",
+    "ShapeMap",
     "bounding_box",
     "explore",
     "faces",

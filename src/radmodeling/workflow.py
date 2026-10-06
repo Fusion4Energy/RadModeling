@@ -33,7 +33,9 @@ from OCP.TopoDS import TopoDS_Shape, TopoDS_Solid
 from radmodeling.cad.analysis import ShapeReport, analyse
 from radmodeling.cad.occ import GeometryMap, volume_and_centroid
 from radmodeling.cad.step import Part, compound, read_step, write_step
-from radmodeling.compare import MM_PER_CM
+from radmodeling.compare import MM_PER_CM, Comparison
+from radmodeling.mcnp.geometry import Geometry
+from radmodeling.mcnp.tags import cells_by_instance
 from radmodeling.registry import (
     TAG_RE,
     Component,
@@ -529,3 +531,19 @@ def read_exported(step: str | os.PathLike) -> dict[Key, ExportedInstance]:
 def exported_solids(step: str | os.PathLike) -> dict[Key, list[TopoDS_Solid]]:
     """The solids of a STEP file written by :func:`export`, by registry key."""
     return {key: i.solids for key, i in read_exported(step).items()}
+
+
+def load_comparison(
+    step: str | os.PathLike,
+    mcnp: str | os.PathLike,
+    compared: Sequence[Key],
+    n_points: int,
+    entropy: int,
+) -> Comparison:
+    """The comparison of a STEP file written by :func:`export` with the MCNP input
+    converted from it, as the worker processes of ``compare`` load it."""
+    geometry = Geometry.from_file(mcnp)
+    cells = cells_by_instance(geometry.model)
+    return Comparison(
+        geometry, exported_solids(step), cells, compared, n_points, entropy
+    )

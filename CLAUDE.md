@@ -44,6 +44,13 @@ keep all code in `radmodeling`.
   `atlas` reruns it with `locate=True` and slices through the clustered problem
   points (`Spot`); slice mismatches within `SURFACE_TOLERANCE` of agreement are
   tessellation noise and dropped.
+- `compare` and `atlas` run per-instance and per-slice tasks on spawned worker
+  processes (`parallel.py`, `--jobs`). OCP shapes cannot be pickled: each worker
+  loads the model itself with a picklable loader (`load_comparison`, `load_atlas`),
+  and tasks are module-level functions or methods of the state class
+  (`Comparison.compare`, `Atlas.draw`). Each instance seeds its own RNG from the
+  seed and its key, so results do not depend on the number of jobs. Tests default
+  to 1 job (`conftest.py`).
 - `src/radmodeling/spaceclaim/*.py` are IronPython 2.7 scripts (no f-strings, no type
   hints, SpaceClaim API names are injected globals, helpers prefixed `rm_`). They are
   run through loaders written by `radmod spaceclaim-loaders`. They cannot be tested

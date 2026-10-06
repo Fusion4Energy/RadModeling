@@ -10,6 +10,13 @@ sys.path.insert(0, str(Path(__file__).parent))
 import models  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def single_job(monkeypatch):
+    """Commands run in this process unless a test asks for workers (--jobs): starting
+    processes takes longer than the small test models."""
+    monkeypatch.setattr("radmodeling.parallel.default_jobs", lambda: 1)
+
+
 @pytest.fixture
 def cad_model(tmp_path: Path) -> Path:
     return models.write_cad(tmp_path / "machine.step")

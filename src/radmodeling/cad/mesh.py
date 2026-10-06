@@ -18,7 +18,7 @@ from OCP.TopAbs import TopAbs_REVERSED
 from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS_Shape
 
-from radmodeling.cad.occ import area_mm2, bounding_box, faces, volume_mm3
+from radmodeling.cad.occ import ShapeMap, area_mm2, bounding_box, faces, volume_mm3
 
 # Largest relative difference between the volume of a mesh and the exact volume.
 # Meshes with the default deflection are typically within 1e-4.
@@ -75,6 +75,18 @@ def triangulate(
             return mesh
         problem = f"mesh volume {mesh.volume / exact - 1:+.3%} off the exact volume"
     raise ValueError(f"{problem}, even with a deflection of {deflection:.3g} mm")
+
+
+_meshes: ShapeMap[TriMesh] = ShapeMap()
+
+
+def mesh_of(shape: TopoDS_Shape) -> TriMesh:
+    """The mesh of a shape with the default deflection, made only once: the atlas
+    classifies the same solids on many slices."""
+    mesh = _meshes.get(shape)
+    if mesh is None:
+        _meshes[shape] = mesh = triangulate(shape)
+    return mesh
 
 
 def _collect_mesh(shape: TopoDS_Shape, deflection: float) -> TriMesh:

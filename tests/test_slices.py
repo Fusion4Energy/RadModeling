@@ -183,7 +183,7 @@ def test_atlas_finds_problems_without_a_report(clash, tmp_path):
     pdf = tmp_path / "atlas.pdf"
     args = ["atlas", mcnp, "--step", exported, "-o", pdf, "--planes", "z:1",
             "--points", "20000", "--seed", "1", "--resolution", "100"]  # fmt: skip
-    result = runner.invoke(app, [str(a) for a in args])
+    result = runner.invoke(app, [str(a) for a in [*args, "--jobs", "2"]])
     assert result.exit_code == 0, result.output
     assert "Instances with problems: 1" in result.output
     data = pdf.read_bytes()

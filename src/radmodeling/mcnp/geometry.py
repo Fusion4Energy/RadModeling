@@ -89,16 +89,11 @@ def _quadric(
     k: float = 0,
 ) -> SurfaceFunction:
     def evaluate(x, y, z):
+        # Factored: fewer temporary arrays than the ten terms
         return (
-            a * x * x
-            + b * y * y
-            + c * z * z
-            + d * x * y
-            + e * y * z
-            + f * z * x
-            + g * x
-            + h * y
-            + j * z
+            x * (a * x + d * y + f * z + g)
+            + y * (b * y + e * z + h)
+            + z * (c * z + j)
             + k
         )
 
@@ -323,6 +318,24 @@ MACROBODIES = {
 
 Box: TypeAlias = tuple[np.ndarray, np.ndarray]  # (low corner, high corner)
 INF = np.inf
+
+
+def in_box(points: Points, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
+    """Mask of the points (N, d) inside the box from lo to hi. Infinite bounds are not
+    compared, and columns are compared one at a time: much faster than ``np.all``."""
+    inside = np.ones(len(points), dtype=bool)
+    for k in range(points.shape[1]):
+        if lo[k] > -INF:
+            inside &= points[:, k] >= lo[k]
+        if hi[k] < INF:
+            inside &= points[:, k] <= hi[k]
+    return inside
+
+
+def _filters(box: Box) -> bool:
+    """Whether a box is worth finding the points inside it: not for a half-space (of
+    a PX plane), as evaluating the surface is cheaper than the filtering."""
+    return int(np.isfinite(box[0]).sum() + np.isfinite(box[1]).sum()) >= 2
 
 
 def _box(lo, hi) -> Box:
@@ -657,6 +670,7 @@ class Geometry:
         self.surfaces: dict[str, Surface] = {}
         self.transforms: dict[int, Transform] = {}
         self._cell_boxes: dict[int, Box | None] = {}
+        self._surface_boxes: dict[tuple[str, bool], Box | None] = {}
 
         for card in model.transforms():
             if card.id is not None:
@@ -700,6 +714,11 @@ class Geometry:
         return [n for n, c in self.cells.items() if c.universe == 0]
 
     def surface_box(self, name: str, positive: bool) -> Box | None:
+        if (name, positive) not in self._surface_boxes:
+            self._surface_boxes[name, positive] = self._surface_box(name, positive)
+        return self._surface_boxes[name, positive]
+
+    def _surface_box(self, name: str, positive: bool) -> Box | None:
         surface = self.surfaces.get(name)
         if surface is None:
             return None
@@ -759,7 +778,7 @@ class Evaluator:
             # Outside the box of one side, the sense is known without evaluating
             for positive_box in (False, True):
                 box = self.geometry.surface_box(surface, positive_box)
-                if box is None or not self.subsets:
+                if box is None or not self.subsets or not _filters(box):
                     continue
                 index = self._points_in(box)
                 sense = np.full(len(self.points), not positive_box)
@@ -783,8 +802,7 @@ class Evaluator:
         end = np.searchsorted(self._x_sorted, box[1][0], "right")
         candidates = self._x_order[start:end]
         yz = self.points[candidates, 1:]
-        inside = np.all((yz >= box[0][1:]) & (yz <= box[1][1:]), axis=1)
-        return candidates[inside]
+        return candidates[in_box(yz, box[0][1:], box[1][1:])]
 
     def cell(self, number: int) -> np.ndarray:
         """Boolean mask of the points inside a cell."""

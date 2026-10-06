@@ -58,7 +58,13 @@ own cells, but their cells overlap. Each pair is measured from the points sample
 around the smaller instance (the more densely sampled one); a very small overlap
 can be missed, so raise `--points` to look closer. `--components 3,7.2` limits it
 to some components (all instances of 3, instance 2 of 7), `--points` sets the
-samples per instance (100 000 by default).
+samples per instance (100 000 by default). Every instance gets its own random
+points from `--seed` and its key, so a result does not depend on the other instances
+compared.
+
+The instances are compared in parallel by `--jobs` worker processes (one per CPU, at
+most 8, by default). Each worker reads the STEP file and the MCNP input itself and
+keeps its own copy in memory: lower `--jobs` for very large models.
 
 The MCNP volumes go into the registry with the density correction factors they give
 (`dcf`), except the factors edited by hand, which are kept and listed.
@@ -96,7 +102,8 @@ instances, found by sampling every instance like `compare` (`--points`). Small
 problems are circled and zoomed on their own pages. The report of `compare`
 (`MODEL_compare.csv` for `MODEL.mcnp` or `MODEL_*.mcnp`, or `--report`) is used when
 found: only the instances it reports are searched. It must come from the current
-geometry and STEP file; `--no-report` searches every instance.
+geometry and STEP file; `--no-report` searches every instance. The instances are
+searched and the slices classified in parallel, like `compare` (`--jobs`).
 
 ## Geometry tools
 
