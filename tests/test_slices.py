@@ -177,6 +177,40 @@ def test_tessellation_is_not_a_mismatch(clash):
     assert (item.result.mismatch_pixels or 0) > 100  # a 1 mm ring around the ball
 
 
+def test_tessellation_of_large_parts_is_not_a_mismatch():
+    import migjorn
+
+    from radmodeling.cad.occ import solids
+    from radmodeling.mcnp.geometry import Geometry
+    from radmodeling.slices import Scene
+    from radmodeling.workflow import ExportedInstance
+
+    # A 1 m radius disc: its mesh is up to about 0.28 mm inside the exact cylinder,
+    # more than the fixed tolerance of small parts
+    disc = solids(models.cylinder(0, 0, 0, 1000, 100))
+
+    def mismatch_pixels(radius_cm: float) -> int:
+        text = f"""disc
+1 0 -1 2 -3 imp:n=1 $ [rm1.1] Disc
+
+1 cz {radius_cm}
+2 pz 0
+3 pz 10
+
+"""
+        geometry = Geometry(migjorn.parse(text))
+        instances = {Key(1): ExportedInstance("Disc", disc)}
+        scene = Scene(geometry, [*disc], instances, {Key(1): [1]}, {}, {})
+        # A thin window along the rim, with pixels much smaller than the deflection
+        rim = Plane(
+            np.array([100.0, 0, 5]), np.array([0.0, 1, 0]), np.eye(3)[0], 4, 0.1
+        )
+        return make_slice(scene, rim, 2000).result.mismatch_pixels or 0
+
+    assert mismatch_pixels(100) == 0
+    assert mismatch_pixels(100.1) > 1000  # a real 1 mm error is still a mismatch
+
+
 def test_atlas_finds_problems_without_a_report(clash, tmp_path):
     exported, mcnp = clash
     runner = CliRunner()

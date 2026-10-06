@@ -33,6 +33,8 @@ _CHUNK_PAIRS = 4_000_000
 class TriMesh:
     vertices: np.ndarray  # (V, 3) float
     triangles: np.ndarray  # (T, 3) int, outward oriented
+    # Linear deflection it was made with: how far it can be from the exact surface
+    deflection: float = 0.0
 
     @property
     def volume(self) -> float:
@@ -129,8 +131,8 @@ def _collect_mesh(shape: TopoDS_Shape, deflection: float) -> TriMesh:
         triangles.append(tris + offset)
         offset += len(nodes)
     if not vertices:
-        return TriMesh(np.zeros((0, 3)), np.zeros((0, 3), dtype=int))
-    return TriMesh(np.vstack(vertices), np.vstack(triangles))
+        return TriMesh(np.zeros((0, 3)), np.zeros((0, 3), dtype=int), deflection)
+    return TriMesh(np.vstack(vertices), np.vstack(triangles), deflection)
 
 
 def _area(nodes: np.ndarray, triangles: np.ndarray) -> float:

@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 import numpy as np
 from OCP.TopoDS import TopoDS_Shape
 
+from radmodeling.cad.mesh import mesh_of
 from radmodeling.cad.occ import bounding_box
 from radmodeling.cad.section import section_polylines
 from radmodeling.cad.step import read_step
@@ -119,8 +120,10 @@ class Slice:
     zooms: list[Slice] = field(default_factory=list)
 
 
-# CAD/MCNP disagreements thinner than this are ignored [cm]: the tessellated CAD and
-# the exact MCNP surfaces differ by about 1e-4 of the size of the parts
+# CAD/MCNP disagreements thinner than this are ignored [cm]. Near the surface of a
+# large part it is larger: twice the deflection of its mesh (1e-4 of its size), as
+# the tessellated CAD and the exact MCNP surface differ by up to the deflection and
+# the points are moved along the axes of the slice, not normal to the surface.
 SURFACE_TOLERANCE = 0.01
 
 
@@ -128,9 +131,9 @@ def make_slice(scene: Scene, plane: Plane, resolution: int, title: str = "") -> 
     """Classify a plane: MCNP cells and materials, CAD outlines and mismatches.
 
     A pixel is a mismatch when the instance of its centre differs in the CAD and in
-    MCNP, unless MCNP agrees with the CAD within ``SURFACE_TOLERANCE`` of it in any
-    direction: a pixel centre that falls between the tessellated CAD and the exact
-    MCNP surface is not a problem.
+    MCNP, unless MCNP agrees with the CAD near it in any direction (within
+    ``SURFACE_TOLERANCE``, more for large parts): a pixel centre that falls between
+    the tessellated CAD and the exact MCNP surface is not a problem.
     """
     n_u = resolution
     n_v = max(int(round(resolution * plane.height / plane.width)), 1)
@@ -164,16 +167,35 @@ def make_slice(scene: Scene, plane: Plane, resolution: int, title: str = "") -> 
         mismatch = item.cad != item.mcnp
         if mismatch.any():
             cells_of = {label[k]: scene.cells.get(k, []) for k in item.keys}
+            cad, mcnp = item.cad[mismatch], item.mcnp[mismatch]
+            # Of the instances on both sides of each disagreement
+            tolerance_of = np.full(len(item.keys) + 1, SURFACE_TOLERANCE)
+            for n in (set(cad.tolist()) | set(mcnp.tolist())) - {0}:
+                solids = scene.instances[item.keys[n - 1]].solids
+                tolerance_of[n] = _surface_tolerance(solids, plane, reach)
             mismatch[mismatch] = ~_near_agreement(
                 scene.geometry,
                 plane,
                 plane.points(n_u, n_v)[mismatch],
-                item.cad[mismatch],
-                item.mcnp[mismatch],
+                cad,
+                mcnp,
                 cells_of,
+                np.maximum(tolerance_of[cad], tolerance_of[mcnp]),
             )
         result.mismatch = mismatch
     return item
+
+
+def _surface_tolerance(
+    solids: Sequence[TopoDS_Shape], plane: Plane, reach: float
+) -> float:
+    """CAD/MCNP disagreements thinner than this are ignored near these solids [cm].
+    Only the solids crossing the window count: those classified on the slice, so
+    their meshes are made already."""
+    deflections = [
+        mesh_of(solid).deflection for solid in solids if near_plane(solid, plane, reach)
+    ]
+    return max([SURFACE_TOLERANCE, *(2 * d / MM_PER_CM for d in deflections)])
 
 
 def _near_agreement(
@@ -183,14 +205,15 @@ def _near_agreement(
     cad: np.ndarray,
     mcnp: np.ndarray,
     cells_of: Mapping[int, Sequence[int]],
+    tolerance: np.ndarray,
 ) -> np.ndarray:
-    """Whether MCNP agrees with the CAD within SURFACE_TOLERANCE of each point: in
+    """Whether MCNP agrees with the CAD within the tolerance (cm) of each point: in
     the cells of the CAD instance, or out of the cells of the MCNP instance where the
     CAD has none."""
     steps = [
         sign * axis for axis in (plane.u, plane.v, plane.normal) for sign in (1, -1)
     ]
-    shifted = np.concatenate([points + SURFACE_TOLERANCE * step for step in steps])
+    shifted = np.concatenate([points + tolerance[:, None] * step for step in steps])
     evaluator = geometry.evaluator(shifted)
     cad, mcnp = np.tile(cad, len(steps)), np.tile(mcnp, len(steps))
     agree = np.zeros(len(shifted), dtype=bool)

@@ -42,8 +42,8 @@ keep all code in `radmodeling`.
   which is unbiased and only noisy where CAD and MCNP disagree. It also measures
   overlaps between instances (`TaggedCells`: each pair once, from the denser side).
   `atlas` reruns it with `locate=True` and slices through the clustered problem
-  points (`Spot`); slice mismatches within `SURFACE_TOLERANCE` of agreement are
-  tessellation noise and dropped.
+  points (`Spot`); slice mismatches within `SURFACE_TOLERANCE` of agreement (twice
+  the mesh deflection near large parts) are tessellation noise and dropped.
 - `compare` and `atlas` run per-instance and per-slice tasks on spawned worker
   processes (`parallel.py`, `--jobs`). OCP shapes cannot be pickled: each worker
   loads the model itself with a picklable loader (`load_comparison`, `load_atlas`),
