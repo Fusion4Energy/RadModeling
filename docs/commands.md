@@ -88,7 +88,9 @@ radmod slice MODEL.mcnp -o SLICE.png
 
 Slice plot. `--normal` is `x`, `y`, `z` or any vector such as `1,1,0`; `--origin`
 is the centre of the image; `--step` overlays the CAD and, with the STEP file from
-`export`, highlights CAD/MCNP mismatches.
+`export`, highlights CAD/MCNP mismatches. Cells are coloured by material; void
+cells of a component (tagged) are light grey and the untagged void around the
+components is near-white.
 
 ### atlas
 

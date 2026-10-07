@@ -520,6 +520,8 @@ class SliceResult:
     cells: np.ndarray  # (n_v, n_u) cell number per pixel, 0 = no cell
     overlaps: np.ndarray  # (n_v, n_u) True where several cells contain the pixel
     materials: np.ndarray  # (n_v, n_u) material number, -1 = no cell
+    # (n_v, n_u) True where the cell is tagged: a component, not filler void
+    tagged: np.ndarray | None = None
     # (n_v, n_u) True where the CAD instance and the instance of the cell differ
     mismatch: np.ndarray | None = None
 

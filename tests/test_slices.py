@@ -8,6 +8,7 @@ from typer.testing import CliRunner
 
 from radmodeling.cli import app
 from radmodeling.compare import Plane, Spot, cluster_labels
+from radmodeling.plot import slice_figure
 from radmodeling.registry import Key
 from radmodeling.slices import (
     instance_plane,
@@ -163,6 +164,22 @@ def test_small_problems_are_circled_and_zoomed(clash):
     assert zoom.result.plane.width < plane.width / 4
     assert zoom.result.overlap_pixels > 10 * item.result.overlap_pixels
     assert zoom.title == "A: overlap of cells 1 [1.1], 4 [4.1]"
+
+
+def test_void_components_are_told_from_filler_void(clash):
+    exported, mcnp = clash
+    scene = load_scene(mcnp, exported)
+    # Across the block (cell 1, tagged) and the void around it (cell 6, untagged)
+    item = make_slice(scene, Plane.from_basis([5, 5, 1], "z", 20, 20), 100)
+    result = item.result
+    assert result.tagged is not None
+    assert result.tagged[result.cells == 1].all()
+    assert not result.tagged[result.cells == 6].any()
+    fig = slice_figure(result, scene.slots)
+    legend = fig.axes[0].get_legend()
+    assert legend is not None
+    labels = [t.get_text() for t in legend.get_texts()]
+    assert {"Void component", "Void"} <= set(labels)
 
 
 def test_tessellation_is_not_a_mismatch(clash):

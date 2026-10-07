@@ -148,6 +148,11 @@ def make_slice(scene: Scene, plane: Plane, resolution: int, title: str = "") -> 
             local = line / MM_PER_CM - plane.origin
             outlines.append(np.column_stack([local @ plane.u, local @ plane.v]))
     item = Slice(title, result, outlines)
+    tagged = {n for numbers in scene.cells.values() for n in numbers}
+    # Cell numbers can be huge (GEOUNED): look up only those in the image
+    in_image, inverse = np.unique(result.cells, return_inverse=True)
+    is_tagged = np.array([int(n) in tagged for n in in_image], dtype=bool)
+    result.tagged = is_tagged[inverse].reshape(result.cells.shape)
 
     if scene.compares:
         # Pixels are labelled 1, 2, 3... by instance, 0 where there is none
@@ -160,9 +165,7 @@ def make_slice(scene: Scene, plane: Plane, resolution: int, title: str = "") -> 
         for key, numbers in scene.cells.items():
             if key in label:
                 owner.update(dict.fromkeys(numbers, label[key]))
-        # Cell numbers can be huge (GEOUNED): look up only those in the image
-        numbers, inverse = np.unique(result.cells, return_inverse=True)
-        labels = np.array([owner.get(int(n), 0) for n in numbers], dtype=np.int64)
+        labels = np.array([owner.get(int(n), 0) for n in in_image], dtype=np.int64)
         item.mcnp = labels[inverse].reshape(item.cad.shape)
         mismatch = item.cad != item.mcnp
         if mismatch.any():

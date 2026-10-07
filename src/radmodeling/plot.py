@@ -27,8 +27,9 @@ if TYPE_CHECKING:
 # Categorical slots in fixed order (validated for colour-vision deficiencies). The
 # palette's red slot is left out so that red only ever means a problem.
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7"]
-OTHER = "#b9b8b3"
-SURFACE = "#fcfcfb"  # void cells
+OTHER = "#a3a29c"
+SURFACE = "#fcfcfb"  # void cells without a tag: filler between the components
+VOID_COMPONENT = "#dcdbd6"  # void cells of a component
 NO_CELL = "#0b0b0b"  # undefined region: particles would be lost here
 CRITICAL = "#d03b3b"  # overlaps and CAD/MCNP mismatches
 TEXT = "#0b0b0b"
@@ -77,13 +78,16 @@ def slice_figure(
     plane = result.plane
     extent = (-plane.width / 2, plane.width / 2, -plane.height / 2, plane.height / 2)
 
-    # Index image: 0 no cell, 1 void, 2 other, 3.. slots
-    image = np.full(result.materials.shape, 2, dtype=int)
+    # Index image: 0 no cell, 1 void, 2 void component, 3 other, 4.. slots
+    void = result.materials == 0
+    void_component = void & (result.tagged if result.tagged is not None else False)
+    image = np.full(result.materials.shape, 3, dtype=int)
     image[result.materials == -1] = 0
-    image[result.materials == 0] = 1
+    image[void] = 1
+    image[void_component] = 2
     for material, slot in slots.items():
-        image[result.materials == material] = 3 + slot
-    colours = [NO_CELL, SURFACE, OTHER, *SERIES]
+        image[result.materials == material] = 4 + slot
+    colours = [NO_CELL, SURFACE, VOID_COMPONENT, OTHER, *SERIES]
 
     fig, ax = plt.subplots(figsize=(9, 9 * plane.height / plane.width + 0.8))
     ax.imshow(
@@ -112,7 +116,11 @@ def slice_figure(
             legend.append(Patch(facecolor=SERIES[slot], label=label))
     if any(m > 0 and m not in slots for m in used):
         legend.append(Patch(facecolor=OTHER, label="Other materials"))
-    if 0 in used:
+    if void_component.any():
+        legend.append(
+            Patch(facecolor=VOID_COMPONENT, edgecolor=BORDER, label="Void component")
+        )
+    if (void & ~void_component).any():
         legend.append(Patch(facecolor=SURFACE, edgecolor=BORDER, label="Void"))
     if -1 in used:
         legend.append(Patch(facecolor=NO_CELL, label="No cell (lost particles)"))
