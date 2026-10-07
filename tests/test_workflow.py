@@ -398,8 +398,10 @@ def test_assign_materials_void(library_file):
         (49.0, None, 1, True),  # 2 %
         (49.6, None, 1, False),  # 0.8 %, within the volume tolerance
         (49.6, None, 0.5, True),  # beyond a tighter tolerance
-        (49.0, 0.4, 1, False),  # 2 % but within three standard deviations (2.4 %)
-        (49.0, 0.1, 1, True),  # 2 % and well beyond its uncertainty
+        (49.48, None, 1, True),  # 1.05 %, just beyond the volume tolerance
+        (49.48, 0.05, 1, False),  # but within it given its uncertainty (3σ: 0.3 %)
+        (49.0, 0.4, 1, False),  # 2 %, within 1 % + three standard deviations (2.4 %)
+        (49.0, 0.1, 1, True),  # 2 % and well beyond 1 % + 3σ (0.6 %)
     ],
 )
 def test_negligible_dcf_are_not_applied(
@@ -514,7 +516,7 @@ def test_compare_component(radius, matches):
     assert not result.touches_sampling_box
 
 
-def test_compare_uncertainty_is_not_below_one_point():
+def test_compare_uncertainty_is_not_below_one_line():
     """A box converts exactly: no point disagrees, yet the uncertainty is not 0."""
     text = models.mcnp_text().replace("1 -2 3 -4 5 -6 7 ", "1 -2 3 -4 5 -6   ")
     box = BRepPrimAPI_MakeBox(100, 100, 50).Shape()
@@ -524,8 +526,9 @@ def test_compare_uncertainty_is_not_below_one_point():
     )  # fmt: skip
     assert result.cad_only_cm3 == result.mcnp_only_cm3 == 0
     assert result.mcnp_volume_cm3 == pytest.approx(500)
-    # One point: the sampling box (padded, a bit larger than the box) / points
-    assert 500 / 10_000 < result.mcnp_volume_std_cm3 < 2 * 500 / 10_000
+    # One line of 20 points: the sampling box (padded, a bit larger than the box) /
+    # the 500 lines
+    assert 500 / 500 < result.mcnp_volume_std_cm3 < 2 * 500 / 500
 
 
 TWO_RODS = """Two rods 0.5 mm apart, so that their sampling boxes overlap

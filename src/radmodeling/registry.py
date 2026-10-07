@@ -62,9 +62,9 @@ def find_key(name: str) -> Key | None:
 VOID = "void"
 
 # Volume difference with the original accepted for a simplified component ('check'),
-# and for its MCNP cells ('compare'): within it, or within DCF_SIGMAS times its
-# uncertainty, the density correction factor is 1. The registry shows the factor that
-# 'materials' applies, never a raw volume ratio
+# and for its MCNP cells ('compare'): unless the MCNP volume is beyond it by more than
+# DCF_SIGMAS times its uncertainty, the density correction factor is 1. The registry
+# shows the factor that 'materials' applies, never a raw volume ratio
 VOLUME_TOLERANCE_PCT = 1.0
 DCF_SIGMAS = 3.0
 
@@ -166,9 +166,10 @@ class Component:
     ) -> None:
         """Store the MCNP volume from 'compare' and the DCF it gives.
 
-        The DCF is 1 when the MCNP volume differs from the original one by less than
-        the tolerance or than DCF_SIGMAS times its uncertainty. A DCF edited by hand
-        is overwritten.
+        The DCF is 1 unless the MCNP volume differs from the original one by more than
+        the tolerance plus DCF_SIGMAS times its uncertainty: the noise of 'compare'
+        does not push a component just within the tolerance beyond it. A DCF edited
+        by hand is overwritten.
         """
         self.mcnp_volume_cm3, self.mcnp_volume_std_cm3 = volume_cm3, std_cm3
         ratio = self.volume_ratio
@@ -177,7 +178,7 @@ class Component:
             return
         deviation = abs(ratio - 1)
         uncertainty = ratio * std_cm3 / volume_cm3
-        if deviation <= tolerance_pct / 100 or deviation < DCF_SIGMAS * uncertainty:
+        if deviation <= tolerance_pct / 100 + DCF_SIGMAS * uncertainty:
             self.dcf = 1.0
         else:
             self.dcf = ratio

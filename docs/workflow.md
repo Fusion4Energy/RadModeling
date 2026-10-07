@@ -182,8 +182,9 @@ the instances of component 3 and instance 2 of component 7. This gives:
 
 * the **MCNP volume** of the component with its uncertainty. The estimate only depends
   on the points where CAD and MCNP disagree, so it is very precise when the conversion
-  is good. Its uncertainty is never below the volume of one sample point: with no
-  point where they disagree, the disagreement can still be that large. It goes into
+  is good. Its uncertainty is never below the volume of one line of sample points
+  (the independent samples): with no line where they disagree, the disagreement can
+  still be that large. It goes into
   the registry with the density correction factor it gives (`dcf`, see
   [Assign the materials](#7-assign-the-materials)).
 * the **discrepancy**: the volume where CAD and MCNP disagree, relative to the CAD
@@ -215,15 +216,15 @@ the registry can be fixed in one go.
 
 The DCF applied is the `dcf` column of the registry, so what the registry shows is
 what goes into the input. `compare` writes it, and no other command changes it.
-It is 1 when the MCNP volume is within the volume tolerance of the original one
-(`compare --tolerance`, 1 % by default, as in `check`), or within three standard
-deviations of it. The tolerance is the volume difference already accepted when
+It is 1 unless the MCNP volume differs from the original one by more than the volume
+tolerance (`compare --tolerance`, 1 % by default, as in `check`) plus three standard
+deviations. The tolerance is the volume difference already accepted when
 simplifying: correcting it in the densities would contradict `check`, and it does not
 add up, as the mass of the whole model is then also within the tolerance. Beyond it,
 the DCF is the full ratio of the original volume to the MCNP one: this catches the
 components accepted beyond the tolerance in `check`, and those the conversion moved
-beyond it. The uncertainty keeps a DCF from correcting the noise of a `compare` with
-too few points. The command counts the instances corrected, those not corrected (DCF of 1), those whose
+beyond it. The three standard deviations keep the noise of `compare` from pushing a
+component just within the tolerance beyond it. The command counts the instances corrected, those not corrected (DCF of 1), those whose
 DCF was edited by hand and those without DCF (not compared yet). Use `--no-dcf` to
 ignore the density correction factors altogether.
 

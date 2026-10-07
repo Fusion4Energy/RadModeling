@@ -386,8 +386,8 @@ def materials(
     """Assign materials and densities (with DCF) to the tagged cells.
 
     The density correction factors are the registry's 'dcf' column: written by
-    'compare' (1 where the MCNP volume is within the volume tolerance or three times
-    its uncertainty) or edited by hand.
+    'compare' (1 unless the MCNP volume is beyond the volume tolerance by more than
+    three times its uncertainty) or edited by hand.
     """
     from radmodeling.mcnp.geometry import read_model
     from radmodeling.mcnp.materials import (
@@ -433,7 +433,7 @@ def materials(
             "Density correction factors (registry 'dcf'), instances:\n"
             f"  {len(report.dcf_applied)} corrected to the CAD volume\n"
             f"  {len(report.dcf_negligible)} not corrected: MCNP volume within the "
-            "volume tolerance or the uncertainty of 'compare' (DCF 1)"
+            "volume tolerance, given the uncertainty of 'compare' (DCF 1)"
         )
         if report.dcf_manual:
             keys = ", ".join(map(str, report.dcf_manual))

@@ -254,10 +254,12 @@ def compare_component(
         return estimate, float(box_volumes**2 @ (variance / n))
 
     difference, variance = integral(mcnp_only.astype(float) - cad_only)
-    # Not below the volume of one point: with no point (or very few) where CAD and
-    # MCNP disagree, the sample variance is 0 but the disagreement can be that large
-    point_volume = integral(np.ones(t.shape))[0] / t.size
-    std = max(math.sqrt(variance), point_volume)
+    # Not below the volume of one line of points, the independent sample: with no
+    # line (or very few) where CAD and MCNP disagree, the sample variance is 0 but
+    # the disagreement can be that large. A line can disagree along all its points,
+    # as in the gap between a tessellated cylinder along it and the exact one
+    line_volume = integral(np.ones(t.shape))[0] / n_lines
+    std = max(math.sqrt(variance), line_volume)
     overlaps = {}
     for other, mask in sorted(shared.items()):
         volume, overlap_variance = integral(mask.reshape(t.shape).astype(float))
