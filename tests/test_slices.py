@@ -7,7 +7,13 @@ import pytest
 from typer.testing import CliRunner
 
 from radmodeling.cli import app
-from radmodeling.compare import Plane, Spot, cluster_labels
+from radmodeling.compare import (
+    Plane,
+    Spot,
+    cluster_labels,
+    find_report,
+    read_problems,
+)
 from radmodeling.plot import slice_figure
 from radmodeling.registry import Key
 from radmodeling.slices import (
@@ -17,7 +23,6 @@ from radmodeling.slices import (
     overview_planes,
     parse_plane_counts,
     plane_shows,
-    read_problems,
     spot_plane,
     zoom_slices,
 )
@@ -61,7 +66,7 @@ def test_read_problems_worst_first(tmp_path):
         "6,2,7,nan,False,,unknown surface 99\n"
         "7,1,8,0.05,False,8.1:2.5 7.1:0.1,\n"
     )
-    problems = read_problems(report, threshold=1)
+    problems = read_problems(report, max_discrepancy=1)
     assert [p.key for p in problems] == [
         (5, 1), (6, 2), (3, 1), (2, 1), (4, 1), (7, 1)
     ]  # fmt: skip
@@ -88,14 +93,14 @@ def test_atlas(tmp_path, cad_model):
     mcnp.write_text(models.mcnp_text(ball_radius=2.6))  # the ball is too big
     report = tmp_path / "compare.csv"
     run(
-        "compare", exported, mcnp, "--no-registry", "--points", "5000",
-        "--seed", "1", "--report", report,
+        "compare", mcnp, exported, "--no-registry", "--points", "5000",
+        "--seed", "1", "-o", report,
     )  # fmt: skip
 
     pdf = tmp_path / "atlas.pdf"
     output = run(
-        "atlas", mcnp, "--step", exported, "-o", pdf, "--planes", "z:2",
-        "--report", report, "--resolution", "80",
+        "atlas", mcnp, exported, "-o", pdf, "--planes", "z:2",
+        "--report", report, "--resolution", "80", "--seed", "1",
     )  # fmt: skip
     assert "Written 3 slices" in output
     data = pdf.read_bytes()
@@ -104,7 +109,7 @@ def test_atlas(tmp_path, cad_model):
     assert len(re.findall(rb"/Type\s*/Page\b", data)) == 4
 
     result = runner.invoke(
-        app, ["atlas", str(mcnp), "--step", str(cad_model), "-o", str(pdf),
+        app, ["atlas", str(mcnp), str(cad_model), "-o", str(pdf),
               "--report", str(report)],
     )  # fmt: skip
     assert result.exit_code == 1
@@ -232,7 +237,7 @@ def test_atlas_finds_problems_without_a_report(clash, tmp_path):
     exported, mcnp = clash
     runner = CliRunner()
     pdf = tmp_path / "atlas.pdf"
-    args = ["atlas", mcnp, "--step", exported, "-o", pdf, "--planes", "z:1",
+    args = ["atlas", mcnp, exported, "-o", pdf, "--planes", "z:1",
             "--points", "20000", "--seed", "1", "--resolution", "100"]  # fmt: skip
     result = runner.invoke(app, [str(a) for a in [*args, "--jobs", "2"]])
     assert result.exit_code == 0, result.output
@@ -244,7 +249,7 @@ def test_atlas_finds_problems_without_a_report(clash, tmp_path):
     assert "Using" not in result.output  # no report around: every instance searched
 
     # The report of 'compare' on model.mcnp is used for model_materials.mcnp too
-    compare = ["compare", exported, mcnp, "--no-registry", "--points", "20000"]
+    compare = ["compare", mcnp, exported, "--no-registry", "--points", "20000"]
     result = runner.invoke(app, [str(a) for a in compare])
     assert result.exit_code == 0, result.output
     assert (tmp_path / "model_compare.csv").exists()
@@ -259,15 +264,18 @@ def test_atlas_finds_problems_without_a_report(clash, tmp_path):
     result = runner.invoke(app, [str(a) for a in [*args, "--no-report"]])
     assert "Using" not in result.output
 
+    # --components limits the search: the block alone does not measure the overlap
+    result = runner.invoke(app, [str(a) for a in [*args, "--components", "1"]])
+    assert result.exit_code == 0, result.output
+    assert "Instances with problems: 0" in result.output
 
-def test_find_report(tmp_path):
-    from radmodeling.cli import _find_report
 
+def testfind_report(tmp_path):
     for name in ("model_compare.csv", "model_v2_compare.csv", "other_compare.csv"):
         (tmp_path / name).write_text("")
-    assert _find_report(tmp_path / "model.mcnp") == tmp_path / "model_compare.csv"
-    found = _find_report(tmp_path / "model_materials.mcnp")
+    assert find_report(tmp_path / "model.mcnp") == tmp_path / "model_compare.csv"
+    found = find_report(tmp_path / "model_materials.mcnp")
     assert found == tmp_path / "model_compare.csv"
-    found = _find_report(tmp_path / "model_v2_materials.mcnp")
+    found = find_report(tmp_path / "model_v2_materials.mcnp")
     assert found == tmp_path / "model_v2_compare.csv"
-    assert _find_report(tmp_path / "modelx.mcnp") is None
+    assert find_report(tmp_path / "modelx.mcnp") is None

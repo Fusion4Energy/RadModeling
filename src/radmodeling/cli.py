@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import csv
 import json
 import math
 from functools import partial
@@ -15,11 +14,10 @@ from rich.console import Console
 from rich.markup import escape as esc
 from rich.table import Table
 
-from radmodeling.registry import VOLUME_TOLERANCE_PCT
+from radmodeling import settings
 
 if TYPE_CHECKING:
-    from radmodeling.compare import Plane, SliceResult, VolumeComparison
-    from radmodeling.slices import Scene
+    from radmodeling.compare import SliceResult
 
 app = typer.Typer(
     help="CAD preparation and CAD-to-MCNP quality assurance tools.",
@@ -39,26 +37,46 @@ RegistryOption = Annotated[
 ]
 
 
+McnpArgument = Annotated[Path, typer.Argument(help="MCNP input.")]
+ExportArgument = Annotated[Path, typer.Argument(help="STEP file written by 'export'.")]
+PointsOption = Annotated[int, typer.Option(help="Sample points per instance.")]
+SeedOption = Annotated[
+    int | None, typer.Option(help="Random seed: the same seed gives the same results.")
+]
+JobsOption = Annotated[
+    int,
+    typer.Option(
+        "--jobs",
+        "-j",
+        help="Worker processes, each with a copy of the model in memory. "
+        "Default: one per CPU, at most 8.",
+    ),
+]
+ComponentsOption = Annotated[
+    str | None,
+    typer.Option(help="Only these components, e.g. '3,7.2' (7.2: instance 2)."),
+]
+LibraryOption = Annotated[
+    Path | None,
+    typer.Option("--library", "-l", help="Material library TOML, for material names."),
+]
+ResolutionOption = Annotated[int, typer.Option(help="Pixels along the width.")]
+
+
+def _output(help: str):
+    return typer.Option("--output", "-o", help=help)
+
+
 def _fail(message: str) -> NoReturn:
     console.print(f"[bold red]Error:[/] {esc(message)}")
     raise typer.Exit(1)
 
 
-ToleranceOption = Annotated[
-    float,
-    typer.Option(
-        help="Volume difference with the original allowed [%]. Use the same in "
-        "'check' and 'compare'."
-    ),
-]
-
-
-JOBS_OPTION = typer.Option(
-    "--jobs",
-    "-j",
-    help="Worker processes, each with a copy of the model in memory. "
-    "Default: one per CPU, at most 8.",
-)
+def _settings() -> settings.Settings:
+    try:
+        return settings.load()
+    except ValueError as exc:
+        _fail(str(exc))
 
 
 def _jobs(jobs: int) -> int:
@@ -72,13 +90,23 @@ def _entropy(seed: int | None) -> int:
     return seed if seed is not None else int(np.random.default_rng().integers(2**63))
 
 
+def _select(keys, components: str | None) -> list:
+    from radmodeling.registry import select_keys
+
+    if not components:
+        return sorted(keys)
+    try:
+        return select_keys(keys, components)
+    except ValueError as exc:
+        _fail(str(exc))
+
+
+def _with_suffix(path: Path, suffix: str) -> Path:
+    """MODEL.ext -> MODEL_suffix: the name of the files written from an input."""
+    return path.with_name(path.stem + suffix)
+
+
 REGISTRY_SUFFIX = "_registry.csv"
-REPORT_SUFFIX = "_compare.csv"  # report of 'compare' on MODEL.mcnp: MODEL_compare.csv
-# Issues of 'check' worth a look but not necessarily wrong: printed in yellow and
-# coloured yellow by the CAD adapters, the other issues in red. Tori are fine in MCNP
-# with their axis along X, Y or Z; components are often moved or deleted on purpose;
-# new components are added to the registry by 'check' itself.
-WARNINGS = {"torus", "moved", "deleted", "new"}
 
 
 def _registry_candidates(near: list[Path]) -> list[Path]:
@@ -146,15 +174,20 @@ def _keys_text(keys) -> str:
 @app.command()
 def init(
     original: Annotated[Path, typer.Argument(help="Original STEP model.")],
-    simplified: Annotated[
+    output: Annotated[
         Path | None,
-        typer.Option(
-            help="Tagged STEP to write, the one to simplify. "
+        _output(
+            "Tagged STEP to write, the one to simplify. "
             "Default: ORIGINAL_simplified.step."
         ),
     ] = None,
     registry: Annotated[
-        Path | None, typer.Option("--registry", "-r", help="Registry CSV to write.")
+        Path | None,
+        typer.Option(
+            "--registry",
+            "-r",
+            help="Registry CSV to write. Default: ORIGINAL_registry.csv.",
+        ),
     ] = None,
     per_solid: Annotated[
         bool, typer.Option(help="Make every solid its own component.")
@@ -172,13 +205,14 @@ def init(
     """
     from radmodeling import workflow
 
-    simplified = simplified or original.with_name(f"{original.stem}_simplified.step")
-    registry = registry or original.with_name(f"{original.stem}_registry.csv")
+    simplified = output or _with_suffix(original, "_simplified.step")
+    registry = registry or _with_suffix(original, REGISTRY_SUFFIX)
     for path in (registry, simplified):
         if path.exists() and not force:
             _fail(f"{path} already exists. Use --force to overwrite it.")
     with console.status("Reading and tagging the model..."):
-        result = workflow.init(original, simplified, registry, per_solid=per_solid)
+        result = workflow.init(original, simplified, per_solid=per_solid)
+    result.save(registry)
     total = sum(c.original_volume_cm3 or 0 for c in result)
     console.print(
         f"[green]Tagged {len(result.ids)} components[/] with {len(result)} instances "
@@ -194,7 +228,6 @@ def init(
 def check(
     simplified: Annotated[Path, typer.Argument(help="Simplified STEP model.")],
     registry: RegistryOption = None,
-    tolerance: ToleranceOption = VOLUME_TOLERANCE_PCT,
     highlight: Annotated[
         Path | None,
         typer.Option(
@@ -206,12 +239,14 @@ def check(
 ) -> None:
     """Compare a simplified model with the registry and diagnose its geometry.
 
-    Updates the simplified volumes in the registry.
+    Updates the simplified volumes in the registry. The volume tolerance is the
+    volume-tolerance setting (radmod config).
     """
     from radmodeling import workflow
     from radmodeling.registry import Registry
 
     _warn_if_stale(simplified)
+    tolerance = _settings().volume_tolerance
     registry = _registry(registry, [simplified])
     assert registry is not None
     _writable(registry)
@@ -222,17 +257,7 @@ def check(
 
     exceeding = result.exceeding()
     matching = result.matching
-    # Component IDs for the CAD adapters, which cannot tell instances apart
-    issues = {
-        "volume": sorted({c.id for c in exceeding}),
-        "unconvertible": result.with_issue(lambda r: r.unconvertible_surfaces),
-        "torus": result.with_issue(lambda r: r.has_torus),
-        "invalid": result.with_issue(lambda r: not r.valid),
-        "deleted": sorted({k.id for k in matching.missing}),
-        "extra": sorted({i.id for i in matching.extra if i.id is not None}),
-        "moved": sorted({k.id for k in matching.moved}),
-        "new": sorted({i.id for i in matching.new if i.id is not None}),
-    }
+    issues = result.issues()
 
     table = Table(title=f"Components beyond ±{tolerance:g}% volume", show_lines=False)
     for column in ("ID", "Name", "Original cm3", "Simplified cm3", "Diff %"):
@@ -251,7 +276,13 @@ def check(
             console.print(f"... and {len(exceeding) - 30} more (see the registry)")
 
     def line(label: str, items: list, hint: str = "", category: str = "") -> None:
-        style = "green" if not items else "yellow" if category in WARNINGS else "red"
+        style = (
+            "green"
+            if not items
+            else "yellow"
+            if category in workflow.WARNINGS
+            else "red"
+        )
         shown = _keys_text(items[:20]) + (" ..." if len(items) > 20 else "")
         console.print(
             f"[{style}]{label}: {len(items)}[/] {shown} {hint if items else ''}"
@@ -262,7 +293,10 @@ def check(
         f"Instances found: {found} of {len(reg)} in the registry "
         f"({len(reg.ids)} components)"
     )
-    line("Instances beyond volume tolerance", [c.key for c in exceeding])
+    line(
+        f"Instances beyond the volume tolerance ({tolerance:g} %)",
+        [c.key for c in exceeding],
+    )
     line(
         "Surfaces a CSG converter cannot translate",
         issues["unconvertible"],
@@ -297,8 +331,8 @@ def check(
     )
     if highlight:
         severity = {
-            "problems": {k: v for k, v in issues.items() if k not in WARNINGS},
-            "warnings": {k: v for k, v in issues.items() if k in WARNINGS},
+            "problems": {k: v for k, v in issues.items() if k not in workflow.WARNINGS},
+            "warnings": {k: v for k, v in issues.items() if k in workflow.WARNINGS},
         }
         highlight.write_text(json.dumps(severity, indent=1))
 
@@ -308,11 +342,9 @@ def export(
     simplified: Annotated[Path, typer.Argument(help="Simplified STEP model.")],
     output: Annotated[
         Path | None,
-        typer.Option(
-            "--output",
-            "-o",
-            help="STEP file to convert to MCNP. Default: NAME_export.step "
-            "next to NAME_registry.csv.",
+        _output(
+            "STEP file to convert to MCNP. Default: NAME_export.step next to "
+            "NAME_registry.csv."
         ),
     ] = None,
     registry: RegistryOption = None,
@@ -370,7 +402,7 @@ def materials(
     ],
     registry: RegistryOption = None,
     output: Annotated[
-        Path | None, typer.Option("--output", "-o", help="MCNP input to write.")
+        Path | None, _output("MCNP input to write. Default: MODEL_materials.mcnp.")
     ] = None,
     dcf: Annotated[
         bool,
@@ -391,7 +423,7 @@ def materials(
     )
     from radmodeling.registry import Registry
 
-    output = output or mcnp.with_name(f"{mcnp.stem}_materials{mcnp.suffix}")
+    output = output or _with_suffix(mcnp, f"_materials{mcnp.suffix}")
     registry = _registry(registry, [mcnp])
     assert registry is not None
     model = read_model(mcnp)
@@ -447,53 +479,52 @@ def materials(
 
 @app.command()
 def compare(
-    step: Annotated[Path, typer.Argument(help="STEP written by 'export'.")],
-    mcnp: Annotated[Path, typer.Argument(help="MCNP input converted from it.")],
-    registry: Annotated[
-        Path | None,
-        typer.Option(
-            "--registry",
-            "-r",
-            help="Registry to update with the MCNP volumes. Default: the only "
-            "*_registry.csv next to the input files or in the current folder.",
-        ),
-    ] = None,
+    mcnp: Annotated[Path, typer.Argument(help="MCNP input from the converter.")],
+    step: ExportArgument,
+    registry: RegistryOption = None,
     no_registry: Annotated[
         bool, typer.Option("--no-registry", help="Do not update any registry.")
     ] = False,
-    points: Annotated[int, typer.Option(help="Sample points per component.")] = 100_000,
-    components: Annotated[
-        str | None,
-        typer.Option(help="Only these components, e.g. '3,7.2' (7.2: instance 2)."),
-    ] = None,
-    report: Annotated[
+    output: Annotated[
         Path | None,
-        typer.Option(
-            help="Report CSV with the full results. Default: MODEL_compare.csv next "
-            "to MODEL.mcnp, where 'atlas' finds it (not written with --components)."
+        _output(
+            "Report CSV with the full results. Default: MODEL_compare.csv, where "
+            "'atlas' finds it (not written with --components)."
         ),
     ] = None,
-    threshold: Annotated[
-        float, typer.Option(help="Discrepancy reported as a problem [%].")
-    ] = 1.0,
-    tolerance: ToleranceOption = VOLUME_TOLERANCE_PCT,
-    seed: Annotated[int | None, typer.Option(help="Random seed.")] = None,
-    jobs: Annotated[int, JOBS_OPTION] = 0,
+    components: ComponentsOption = None,
+    points: PointsOption = 100_000,
+    seed: SeedOption = None,
+    jobs: JobsOption = 0,
 ) -> None:
     """Compare every instance's CAD solids with its MCNP cells by point sampling.
 
-    Gives the MCNP volume of each instance (for the density correction factors), the
-    volume where CAD and MCNP disagree and the volume of overlapping cells.
+    Gives the MCNP volume of each instance, the volume where CAD and MCNP disagree
+    and the volume of overlapping cells. Instances beyond the max-discrepancy
+    setting (radmod config) are reported as problems. The MCNP volumes and the
+    density correction factors (1 within the volume-tolerance setting) are saved in
+    the registry.
     """
-    from radmodeling.compare import Comparison
+    from radmodeling.compare import (
+        Comparison,
+        overlap_pairs,
+        report_path,
+        write_report,
+    )
     from radmodeling.mcnp.geometry import Geometry
     from radmodeling.mcnp.tags import cells_by_instance
     from radmodeling.parallel import Workers
-    from radmodeling.registry import Key, Registry
-    from radmodeling.workflow import exported_solids, load_comparison
+    from radmodeling.registry import Registry
+    from radmodeling.workflow import (
+        exported_solids,
+        load_comparison,
+        record_mcnp_volumes,
+    )
 
+    config = _settings()
+    max_discrepancy = config.max_discrepancy
     if not no_registry:
-        registry = _registry(registry, [step, mcnp], required=False)
+        registry = _registry(registry, [mcnp, step], required=False)
         if registry is not None:
             _writable(registry)
         else:
@@ -518,15 +549,10 @@ def compare(
             f"[yellow]Cells tagged with instances not in {esc(str(step))}:[/] "
             + _keys_text(orphans)
         )
-    selected = sorted(solids)
-    if components:
-        wanted = components.replace(",", " ").split()
-        ids = {int(t) for t in wanted if "." not in t}
-        keys = {Key.parse(t) for t in wanted if "." in t}
-        selected = [k for k in selected if k.id in ids or k in keys]
+    selected = _select(solids, components)
     entropy = _entropy(seed)
     comparison = Comparison(geometry, solids, cells, selected, points, entropy)
-    load = partial(load_comparison, step, mcnp, selected, points, entropy)
+    load = partial(load_comparison, mcnp, step, selected, points, entropy)
 
     results = []
     with console.status("") as status, Workers(comparison, load, _jobs(jobs)) as pool:
@@ -535,8 +561,10 @@ def compare(
             status.update(f"Compared {i}/{len(selected)} instances")
             results.append(result)
 
-    problems = [r for r in results if r.exceeds(threshold)]
-    table = Table(title=f"Instances with problems (discrepancy > {threshold:g}%)")
+    problems = [r for r in results if r.exceeds(max_discrepancy)]
+    table = Table(
+        title=f"Instances with problems (discrepancy > {max_discrepancy:g} %)"
+    )
     for column in ("ID", "Cells", "CAD cm3", "MCNP cm3", "Discrepancy %", "Note"):
         table.add_column(column)
     for r in sorted(problems, key=lambda r: -np.nan_to_num(r.discrepancy_pct, nan=1e9)):
@@ -558,11 +586,7 @@ def compare(
     if problems:
         console.print(table)
 
-    pairs = {
-        (min(r.key, other), max(r.key, other)): overlap
-        for r in results
-        for other, overlap in r.overlaps.items()
-    }
+    pairs = overlap_pairs(results)
     overlap_table = Table(title="Overlapping instances")
     for column in ("ID", "ID", "Overlap cm3"):
         overlap_table.add_column(column)
@@ -583,66 +607,17 @@ def compare(
 
     if registry and not no_registry:
         reg = Registry.load(registry)
-        for r in results:
-            if r.key in reg and not r.error:
-                reg[r.key].set_mcnp_volume(
-                    r.mcnp_volume_cm3, r.mcnp_volume_std_cm3, tolerance
-                )
+        record_mcnp_volumes(reg, results, config.volume_tolerance)
         reg.save(registry)
-        console.print(f"MCNP volumes and DCFs saved in {esc(str(registry))}.")
-    if report is None and not components:
-        report = mcnp.with_name(mcnp.stem + REPORT_SUFFIX)
-    if report:
-        with open(report, "w", encoding="utf-8", newline="") as outfile:
-            writer = csv.writer(outfile)
-            writer.writerow(
-                [
-                    "component_id",
-                    "instance",
-                    "cells",
-                    "cad_volume_cm3",
-                    "mcnp_volume_cm3",
-                    "mcnp_volume_std_cm3",
-                    "cad_only_cm3",
-                    "mcnp_only_cm3",
-                    "discrepancy_pct",
-                    "touches_sampling_box",
-                    "overlaps",
-                    "error",
-                ]
-            )
-            for r in results:
-                writer.writerow(
-                    [
-                        r.key.id,
-                        r.key.instance,
-                        " ".join(map(str, r.cells)),
-                        r.cad_volume_cm3,
-                        r.mcnp_volume_cm3,
-                        r.mcnp_volume_std_cm3,
-                        r.cad_only_cm3,
-                        r.mcnp_only_cm3,
-                        r.discrepancy_pct,
-                        r.touches_sampling_box,
-                        " ".join(
-                            f"{k}:{volume:.6g}" for k, (volume, _) in r.overlaps.items()
-                        ),
-                        r.error,
-                    ]
-                )
-        console.print(f"Results written to {esc(str(report))}")
-
-
-def _find_report(mcnp: Path) -> Path | None:
-    """The report of 'compare' on MODEL.mcnp for MODEL.mcnp or MODEL_*.mcnp (such as
-    MODEL_materials.mcnp, written by 'materials'): the longest such MODEL wins."""
-    names = [
-        p
-        for p in mcnp.resolve().parent.glob("*" + REPORT_SUFFIX)
-        if mcnp.stem == (stem := p.name[: -len(REPORT_SUFFIX)])
-        or mcnp.stem.startswith(stem + "_")
-    ]
-    return max(names, key=lambda p: len(p.name), default=None)
+        console.print(
+            f"MCNP volumes and DCFs (volume tolerance {config.volume_tolerance:g} %) "
+            f"saved in {esc(str(registry))}."
+        )
+    if output is None and not components:
+        output = report_path(mcnp)
+    if output:
+        write_report(results, output)
+        console.print(f"Results written to {esc(str(output))}")
 
 
 def _cells_text(cells: list[int]) -> str:
@@ -655,8 +630,17 @@ def _cells_text(cells: list[int]) -> str:
 
 @app.command(name="slice")
 def slice_(
-    mcnp: Annotated[Path, typer.Argument(help="MCNP input.")],
-    output: Annotated[Path, typer.Option("--output", "-o", help="PNG to write.")],
+    mcnp: McnpArgument,
+    step: Annotated[
+        Path | None,
+        typer.Argument(
+            help="STEP model to overlay. With the one from 'export', CAD/MCNP "
+            "mismatches are highlighted."
+        ),
+    ] = None,
+    output: Annotated[
+        Path | None, _output("PNG to write. Default: MODEL_slice.png.")
+    ] = None,
     normal: Annotated[
         str, typer.Option(help="'x', 'y', 'z' or a vector such as '0,1,1'.")
     ] = "z",
@@ -665,17 +649,8 @@ def slice_(
     ] = None,
     width: Annotated[float | None, typer.Option(help="Width [cm].")] = None,
     height: Annotated[float | None, typer.Option(help="Height [cm].")] = None,
-    resolution: Annotated[int, typer.Option(help="Pixels along the width.")] = 800,
-    step: Annotated[
-        Path | None,
-        typer.Option(
-            help="STEP model to overlay. With the one from 'export', CAD/MCNP "
-            "mismatches are highlighted."
-        ),
-    ] = None,
-    library: Annotated[
-        Path | None, typer.Option("--library", "-l", help="For material names.")
-    ] = None,
+    resolution: ResolutionOption = 800,
+    library: LibraryOption = None,
 ) -> None:
     """Plot a slice of the MCNP geometry, optionally overlaid with the CAD.
 
@@ -685,6 +660,7 @@ def slice_(
     from radmodeling.plot import render_slice
     from radmodeling.slices import load_scene, make_slice, zoom_slices
 
+    output = output or _with_suffix(mcnp, "_slice.png")
     with console.status("Reading the models..."):
         scene = load_scene(mcnp, step, _library_names(library))
     centre, extent = None, None
@@ -695,7 +671,7 @@ def slice_(
     if origin:
         centre = np.array([float(v) for v in origin.split(",")])
     if centre is None:
-        _fail("give --origin (or a --step model to centre the slice on)")
+        _fail("give --origin (or a STEP model to centre the slice on)")
 
     if normal.lower() in ("x", "y", "z"):
         axes = {"x": (1, 2), "y": (0, 2), "z": (0, 1)}[normal.lower()]
@@ -732,11 +708,7 @@ def _library_names(library: Path | None) -> dict[int, str]:
         return {}
     from radmodeling.mcnp.materials import MaterialLibrary
 
-    return {
-        m.number: f"{m.name} (m{m.number})"
-        for m in MaterialLibrary.load(library).materials
-        if m.number is not None
-    }
+    return MaterialLibrary.load(library).names_by_number()
 
 
 def _print_slice_problems(result: SliceResult) -> None:
@@ -751,73 +723,19 @@ def _print_slice_problems(result: SliceResult) -> None:
         console.print(f"CAD/MCNP mismatching pixels: {result.mismatch_pixels}")
 
 
-def _problem_pages(
-    scene: Scene, results: list[VolumeComparison], threshold: float, worst: int
-) -> list[tuple[str, Plane]]:
-    """Slices through the problems of the worst instances, with their titles."""
-    from radmodeling.slices import (
-        instance_plane,
-        plane_shows,
-        solids_bounds_cm,
-        spot_plane,
-    )
-
-    problems = [r for r in results if r.is_problem(threshold)]
-    problems.sort(
-        key=lambda r: (
-            not (r.error or math.isnan(r.discrepancy_pct)),
-            not r.exceeds(threshold),
-            -np.nan_to_num(r.discrepancy_pct),
-            -sum(v for v, _ in r.overlaps.values()),
-        )
-    )
-    console.print(f"Instances with problems: {len(problems)}")
-    if len(problems) > worst:
-        console.print(
-            f"[yellow]{len(problems) - worst} more problem instances[/] were left "
-            "out (see --worst)"
-        )
-    pages = []
-    for r in problems[:worst]:
-        instance = scene.instances[r.key]
-        name = f"{r.key} {instance.name}"
-        lo, hi = solids_bounds_cm(instance.solids)
-        size = float(np.max(hi - lo))
-        spots = [
-            spot for spot in r.spots if spot.kind == "overlap" or r.exceeds(threshold)
-        ]
-        shown: list[Plane] = []
-        for spot in spots:
-            if any(plane_shows(plane, spot) for plane in shown):
-                continue
-            context = max(0.15 * size, float(np.max(spot.hi - spot.lo)), 1.0)
-            shown.append(spot_plane(spot, context))
-            if spot.kind == "overlap":
-                other = "itself" if spot.other == r.key else str(spot.other)
-                title = f"{name}: overlap with {other} ({spot.volume_cm3:.3g} cm3)"
-            else:
-                title = f"{name}: mismatch, discrepancy {r.discrepancy_pct:.3g} %"
-            pages.append((title, shown[-1]))
-        if not spots:
-            note = r.error or (
-                "no tagged cells" if not r.cells else "no problem located"
-            )
-            title = f"{name}: discrepancy {r.discrepancy_pct:.3g} % ({note})"
-            pages.append((title, instance_plane(instance.solids)))
-    return pages
-
-
 @app.command()
 def atlas(
-    mcnp: Annotated[Path, typer.Argument(help="MCNP input.")],
+    mcnp: McnpArgument,
     step: Annotated[
         Path,
-        typer.Option(
+        typer.Argument(
             help="STEP model to overlay. With the one from 'export', the problems are "
             "searched in 3D and CAD/MCNP mismatches are highlighted."
         ),
     ],
-    output: Annotated[Path, typer.Option("--output", "-o", help="PDF to write.")],
+    output: Annotated[
+        Path | None, _output("PDF to write. Default: MODEL_atlas.pdf.")
+    ] = None,
     planes: Annotated[
         str,
         typer.Option(help="Evenly spaced planes normal to each axis, e.g. 'x:3,z:6'."),
@@ -836,19 +754,15 @@ def atlas(
             "--no-report", help="Search every instance, even with a report around."
         ),
     ] = False,
+    components: ComponentsOption = None,
     worst: Annotated[
         int, typer.Option(help="Maximum number of problem instances sliced.")
     ] = 20,
-    threshold: Annotated[
-        float, typer.Option(help="Discrepancy that makes an instance a problem [%].")
-    ] = 1.0,
-    points: Annotated[int, typer.Option(help="Sample points per instance.")] = 100_000,
-    resolution: Annotated[int, typer.Option(help="Pixels along the width.")] = 400,
-    library: Annotated[
-        Path | None, typer.Option("--library", "-l", help="For material names.")
-    ] = None,
-    seed: Annotated[int | None, typer.Option(help="Random seed.")] = None,
-    jobs: Annotated[int, JOBS_OPTION] = 0,
+    points: PointsOption = 100_000,
+    resolution: ResolutionOption = 400,
+    library: LibraryOption = None,
+    seed: SeedOption = None,
+    jobs: JobsOption = 0,
 ) -> None:
     """Write a PDF atlas of slices: across the whole model and through every problem.
 
@@ -858,6 +772,7 @@ def atlas(
     their own pages. The first pages summarise the pixels in no cell, in several
     cells and where CAD and MCNP disagree for every slice.
     """
+    from radmodeling.compare import find_report, read_problems
     from radmodeling.parallel import Workers
     from radmodeling.plot import write_atlas
     from radmodeling.slices import (
@@ -866,10 +781,12 @@ def atlas(
         load_scene,
         overview_planes,
         parse_plane_counts,
-        read_problems,
+        problem_pages,
         scene_comparison,
     )
 
+    max_discrepancy = _settings().max_discrepancy
+    output = output or _with_suffix(mcnp, "_atlas.pdf")
     try:
         counts = parse_plane_counts(planes)
     except ValueError as exc:
@@ -882,12 +799,13 @@ def atlas(
         _fail(f"{step} has no solids")
     todo = overview_planes(*bounds, counts)
 
-    if report and not scene.compares:
-        _fail(f"--report needs the STEP file written by 'export', not {step}")
+    if (report or components) and not scene.compares:
+        option = "--report" if report else "--components"
+        _fail(f"{option} needs the STEP file written by 'export', not {step}")
     if no_report:
         report = None
     elif report is None and scene.compares:
-        report = _find_report(mcnp)
+        report = find_report(mcnp)
     keys = []
     if not scene.compares:
         console.print(
@@ -900,15 +818,16 @@ def atlas(
             "searched. It must come from 'compare' on this geometry and STEP file: "
             "run 'compare' again after changing them, or use --no-report.[/]"
         )
-        keys = [p.key for p in read_problems(report, threshold)]
+        keys = [p.key for p in read_problems(report, max_discrepancy)]
         missing = [k for k in keys if k not in scene.instances]
         if missing:
             _fail(
                 f"instances of {report} not in {step}: {_keys_text(missing)} "
                 "(a report of another model?)"
             )
+        keys = _select(keys, components)
     else:
-        keys = sorted(scene.instances)
+        keys = _select(scene.instances, components)
 
     entropy = _entropy(seed)
     work = Atlas(scene, scene_comparison(scene, keys, points, entropy), resolution)
@@ -920,7 +839,14 @@ def atlas(
                 for i, result in enumerate(pool.map(Atlas.search, keys), 1):
                     status.update(f"Searched {i}/{len(keys)} instances")
                     results.append(result)
-            todo += _problem_pages(scene, results, threshold, worst)
+            pages, n_problems = problem_pages(scene, results, max_discrepancy, worst)
+            console.print(f"Instances with problems: {n_problems}")
+            if n_problems > worst:
+                console.print(
+                    f"[yellow]{n_problems - worst} more problem instances[/] were "
+                    "left out (see --worst)"
+                )
+            todo += pages
         if not todo:
             _fail("no slices to draw: give --planes or a model from 'export'")
 
@@ -932,7 +858,7 @@ def atlas(
     header = [f"MCNP input: {mcnp}", f"CAD: {step}"]
     if report:
         header.append(f"Problem instances from: {report}")
-    header.append(f"Discrepancy threshold: {threshold:g} %")
+    header.append(f"Maximum discrepancy: {max_discrepancy:g} %")
     with console.status("Writing the PDF..."):
         write_atlas(slices, output, scene.slots, scene.material_names, header)
 
@@ -945,56 +871,86 @@ def atlas(
     )
 
 
+# --- settings ------------------------------------------------------------------------
+
+
+@app.command()
+def config(
+    name: Annotated[
+        str | None, typer.Argument(help="Setting to show or change.")
+    ] = None,
+    value: Annotated[str | None, typer.Argument(help="Its new value.")] = None,
+    unset: Annotated[
+        bool, typer.Option("--unset", help="Restore the default of the setting.")
+    ] = False,
+) -> None:
+    """Show or change your settings, kept for every model and SpaceClaim tool.
+
+    'radmod config' lists them, 'radmod config NAME' shows one,
+    'radmod config NAME VALUE' changes it and 'radmod config NAME --unset' restores
+    its default.
+    """
+    if unset and (name is None or value is not None):
+        _fail("--unset takes the name of a setting and no value")
+    try:
+        if unset:
+            assert name is not None
+            settings.unset(name)
+        elif value is not None:
+            assert name is not None
+            settings.set_value(name, value)
+        stored = settings.stored()
+    except ValueError as exc:
+        _fail(str(exc))
+    if name is not None and name not in settings.SETTINGS:
+        _fail(f"unknown setting '{name}' (known: {', '.join(settings.SETTINGS)})")
+    if name is not None and not unset and value is None:
+        print(f"{stored.get(name, settings.SETTINGS[name][0]):g}")
+        return
+    table = Table(title="Settings")
+    for column in ("Name", "Value", "Description"):
+        table.add_column(column)
+    for key, (default, description) in settings.SETTINGS.items():
+        shown = f"{stored[key]:g}" if key in stored else f"{default:g} (default)"
+        if name is None or key == name:
+            table.add_row(key, shown, description)
+    console.print(table)
+    console.print(f"Saved in {esc(str(settings.path()))}")
+
+
 # --- geometry tools ------------------------------------------------------------------
 
 
 @app.command(hidden=True)
 def fmesh(
     step: Annotated[Path, typer.Argument(help="STEP with one box per mesh tally.")],
-    output: Annotated[Path, typer.Option(help="File for the FMESH cards.")],
     size: Annotated[float, typer.Option(help="Voxel size [cm].")],
+    output: Annotated[
+        Path | None, _output("File for the FMESH cards. Default: STEP_fmesh.txt.")
+    ] = None,
 ) -> None:
     """Write FMESH cards for the boxes of a STEP file (any orientation).
 
     Run by the SpaceClaim Fmesh tool on the selected bodies: tally numbers, particle
     and voxels are meant to be edited in the written cards.
     """
-    from radmodeling.cad.step import read_step
-    from radmodeling.fmesh import (
-        FIRST_TALLY,
-        FIRST_TRANSFORM,
-        box_from_solid,
-        comment_line,
-        fmesh_card,
-        voxel_counts,
-    )
+    from radmodeling.fmesh import fmesh_cards
 
-    if size <= 0:
-        _fail("the voxel size must be positive")
-    cards = []
-    number, tr = FIRST_TALLY, FIRST_TRANSFORM
-    # SpaceClaim names the solids after the bodies: a few boxes, so reading is fast
-    for part in read_step(step, body_names=lambda _: True):
-        for k, solid in enumerate(part.solids):
-            name = part.body_names[k] if k < len(part.body_names) else ""
-            name = name or part.name
-            try:
-                box = box_from_solid(solid)
-                card = fmesh_card(box, number, size=size, transform=tr)
-            except ValueError as exc:
-                console.print(f"[yellow]Skipping {esc(name)}:[/] {esc(str(exc))}")
-                continue
-            cards.append(comment_line(name) + "\n" + card)
-            counts = voxel_counts(box, size)
-            console.print(
-                f"FMESH{number} {esc(name)}: {' x '.join(map(str, counts))} = "
-                f"{math.prod(counts)} voxels"
-            )
-            number += 10
-            tr += 0 if box.axis_aligned else 1
-    if not cards:
+    output = output or _with_suffix(step, "_fmesh.txt")
+    try:
+        cards = fmesh_cards(step, size)
+    except ValueError as exc:
+        _fail(str(exc))
+    for name, why in cards.skipped:
+        console.print(f"[yellow]Skipping {esc(name)}:[/] {esc(why)}")
+    for number, name, counts in cards.tallies:
+        console.print(
+            f"FMESH{number} {esc(name)}: {' x '.join(map(str, counts))} = "
+            f"{math.prod(counts)} voxels"
+        )
+    if not cards.tallies:
         _fail("no boxes found")
-    output.write_text("".join(cards), encoding="utf-8")
+    output.write_text(cards.text, encoding="utf-8")
     console.print(f"Cards written to {esc(str(output))}")
 
 
@@ -1008,6 +964,7 @@ import traceback
 
 RADMODELING_SPACECLAIM = r"{folder}"
 RADMODELING_PYTHON = r"{python}"  # runs radmod for the tools that need it
+RADMODELING_SETTINGS = r"{settings}"  # radmod config
 try:
     execfile(os.path.join(RADMODELING_SPACECLAIM, "_rm.py"))
     execfile(os.path.join(RADMODELING_SPACECLAIM, "{script}"))
@@ -1052,6 +1009,7 @@ def spaceclaim_loaders(
                 tool=tool,
                 folder=folder,
                 python=sys.executable,
+                settings=settings.path(),
                 script=script.name,
             ),
             encoding="utf-8",

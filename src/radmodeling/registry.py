@@ -64,7 +64,8 @@ VOID = "void"
 # Volume difference with the original accepted for a simplified component ('check'),
 # and for its MCNP cells ('compare'): unless the MCNP volume is beyond it by more than
 # DCF_SIGMAS times its uncertainty, the density correction factor is 1. The registry
-# shows the factor that 'materials' applies, never a raw volume ratio
+# shows the factor that 'materials' applies, never a raw volume ratio. This is the
+# default of the 'volume-tolerance' setting (radmod config)
 VOLUME_TOLERANCE_PCT = 1.0
 DCF_SIGMAS = 3.0
 
@@ -83,6 +84,20 @@ class Key(NamedTuple):
         """Read ``'3.7'`` (component 3, instance 7) or ``'3'`` (instance 1)."""
         component_id, _, instance = text.strip().partition(".")
         return cls(int(component_id), int(instance) if instance else 1)
+
+
+def select_keys(keys: Iterable[Key], text: str) -> list[Key]:
+    """The keys chosen by a selection such as ``'3,7.2'``: every instance of
+    component 3 and instance 2 of component 7."""
+    wanted = text.replace(",", " ").split()
+    try:
+        ids = {int(t) for t in wanted if "." not in t}
+        chosen = {Key.parse(t) for t in wanted if "." in t}
+    except ValueError:
+        raise ValueError(
+            f"invalid selection '{text}': use IDs such as '3,7.2'"
+        ) from None
+    return sorted(k for k in keys if k.id in ids or k in chosen)
 
 
 @dataclass

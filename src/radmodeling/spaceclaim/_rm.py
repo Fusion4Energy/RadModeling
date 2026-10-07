@@ -8,6 +8,7 @@
 # read the registry written by 'radmod' and colour, hide or extrude things.
 import csv
 import io
+import json
 import os
 import re
 
@@ -75,12 +76,23 @@ def rm_positive_parameter(name, default):
     return value
 
 
-RM_VOLUME_TOLERANCE_PCT = 1.0  # default of the VolumeTolerance script parameter
+RM_VOLUME_TOLERANCE_PCT = 1.0  # default of the volume-tolerance setting
 
 
 def rm_volume_tolerance():
-    """Maximum volume deviation allowed [%], shared by the volume tools."""
-    return rm_positive_parameter("VolumeTolerance", RM_VOLUME_TOLERANCE_PCT)
+    """Maximum volume deviation allowed [%], shared by the volume tools: the
+    volume-tolerance setting of 'radmod config'."""
+    path = globals().get("RADMODELING_SETTINGS")
+    if not path:
+        raise ValueError(
+            "This tool needs loaders written by a recent radmodeling: run "
+            "'radmod spaceclaim-loaders' again and publish the tools again."
+        )
+    if not os.path.exists(path):
+        return RM_VOLUME_TOLERANCE_PCT
+    with open(path) as infile:
+        values = json.load(infile)
+    return float(values.get("volume-tolerance", RM_VOLUME_TOLERANCE_PCT))
 
 
 def rm_tag(name):

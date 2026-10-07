@@ -3,16 +3,13 @@
 #
 # The target is the volume of one instance: linked instances change together, and
 # instances that were deleted or made independent do not disturb the result. It
-# stops within half of the VolumeTolerance script parameter (1 % by default), well
-# inside what the checks accept.
+# stops within half of the volume-tolerance setting ('radmod config', 1 % by
+# default), well inside what the checks accept.
 MAX_ITERATIONS = 25
 
 
 def rm_adjust_volume():
-    tolerance = rm_volume_tolerance()
-    if tolerance is None:
-        return
-    tolerance /= 2
+    tolerance = rm_volume_tolerance() / 2
     selection = Selection.GetActive()
     faces = list(selection.Items)
     if not faces:

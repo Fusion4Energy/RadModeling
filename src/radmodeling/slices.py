@@ -11,7 +11,6 @@ pixels get a zoomed slice of their own (:func:`zoom_slices`).
 
 from __future__ import annotations
 
-import csv
 import math
 import os
 from collections import Counter
@@ -445,41 +444,59 @@ def instance_plane(solids: Sequence[TopoDS_Shape], margin: float = 0.25) -> Plan
     )
 
 
-@dataclass
-class Problem:
-    key: Key
-    discrepancy_pct: float
-    note: str = ""
-
-
-def read_problems(report: str | os.PathLike, threshold: float = 1.0) -> list[Problem]:
-    """The instances of a 'compare' report beyond the threshold, worst first.
-
-    Instances that could not be evaluated (no discrepancy) come first.
-    """
-    problems = []
-    with open(report, encoding="utf-8-sig", newline="") as infile:
-        for row in csv.DictReader(infile):
-            key = Key(int(row["component_id"]), int(row["instance"]))
-            discrepancy = float(row["discrepancy_pct"] or "nan")
-            notes = []
-            if row.get("error"):
-                notes.append(row["error"])
-            if not row.get("cells", "").strip():
-                notes.append("no tagged cells")
-            if row.get("touches_sampling_box") == "True":
-                notes.append("cells exceed the sampled box")
-            if row.get("overlaps", "").strip():
-                others = [o.partition(":")[0] for o in row["overlaps"].split()]
-                notes.append("overlaps " + ", ".join(others))
-            if math.isnan(discrepancy) or discrepancy > threshold or notes:
-                problems.append(Problem(key, discrepancy, "; ".join(notes)))
-    problems.sort(
-        key=lambda p: -math.inf if math.isnan(p.discrepancy_pct) else -p.discrepancy_pct
-    )
-    return problems
-
-
 def solids_bounds_cm(solids: Sequence[TopoDS_Shape]) -> tuple[np.ndarray, np.ndarray]:
     boxes = np.array([bounding_box(s) for s in solids]) / MM_PER_CM
     return boxes[:, :3].min(axis=0), boxes[:, 3:].max(axis=0)
+
+
+def problem_pages(
+    scene: Scene,
+    results: Sequence[VolumeComparison],
+    max_discrepancy: float,
+    worst: int,
+) -> tuple[list[tuple[str, Plane]], int]:
+    """Slices through the problems of the ``worst`` instances, with their titles,
+    and the number of instances with problems.
+
+    Instances that could not be evaluated come first, then those beyond the maximum
+    discrepancy (worst first), then those that only overlap (largest first).
+    """
+    problems = [r for r in results if r.is_problem(max_discrepancy)]
+    problems.sort(
+        key=lambda r: (
+            not (r.error or math.isnan(r.discrepancy_pct)),
+            not r.exceeds(max_discrepancy),
+            -np.nan_to_num(r.discrepancy_pct),
+            -sum(v for v, _ in r.overlaps.values()),
+        )
+    )
+    pages = []
+    for r in problems[:worst]:
+        instance = scene.instances[r.key]
+        name = f"{r.key} {instance.name}"
+        lo, hi = solids_bounds_cm(instance.solids)
+        size = float(np.max(hi - lo))
+        spots = [
+            spot
+            for spot in r.spots
+            if spot.kind == "overlap" or r.exceeds(max_discrepancy)
+        ]
+        shown: list[Plane] = []
+        for spot in spots:
+            if any(plane_shows(plane, spot) for plane in shown):
+                continue
+            context = max(0.15 * size, float(np.max(spot.hi - spot.lo)), 1.0)
+            shown.append(spot_plane(spot, context))
+            if spot.kind == "overlap":
+                other = "itself" if spot.other == r.key else str(spot.other)
+                title = f"{name}: overlap with {other} ({spot.volume_cm3:.3g} cm3)"
+            else:
+                title = f"{name}: mismatch, discrepancy {r.discrepancy_pct:.3g} %"
+            pages.append((title, shown[-1]))
+        if not spots:
+            note = r.error or (
+                "no tagged cells" if not r.cells else "no problem located"
+            )
+            title = f"{name}: discrepancy {r.discrepancy_pct:.3g} % ({note})"
+            pages.append((title, instance_plane(instance.solids)))
+    return pages, len(problems)

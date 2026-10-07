@@ -4,13 +4,11 @@
 #
 # Red: beyond the tolerance. Blue transparent: within it. Grey: untagged bodies.
 # The same check, plus geometry diagnostics, is 'radmod check' on an exported STEP.
-# The tolerance is the VolumeTolerance script parameter (1 % by default).
+# The tolerance is the volume-tolerance setting ('radmod config', 1 % by default).
 
 
 def rm_check_volumes():
     tolerance = rm_volume_tolerance()
-    if tolerance is None:
-        return
     registry = rm_read_registry()
     by_id, untagged = rm_bodies_by_id()
     exceeding, fine, problems = [], [], []

@@ -5,16 +5,13 @@
 # components with problems in red, and in yellow those with only warnings (tori,
 # moved, deleted instances, new).
 # The document itself is not changed and stays the working file. The volume tolerance
-# is the VolumeTolerance script parameter (1 % by default).
+# is the volume-tolerance setting ('radmod config', 1 % by default).
 import json
 import os
 import tempfile
 
 
 def rm_check_model():
-    tolerance = rm_volume_tolerance()
-    if tolerance is None:
-        return
     document = GetRootPart().Document
     path = document.Path
     if not path:
@@ -44,8 +41,6 @@ def rm_check_model():
                 registry,
                 "--highlight",
                 problems,
-                "--tolerance",
-                "%g" % tolerance,
             ]
         )
         # radmod only writes the file when the check ran: an empty one means it failed

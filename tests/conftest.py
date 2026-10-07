@@ -17,6 +17,14 @@ def single_job(monkeypatch):
     monkeypatch.setattr("radmodeling.parallel.default_jobs", lambda: 1)
 
 
+@pytest.fixture(autouse=True)
+def user_settings(tmp_path_factory, monkeypatch) -> Path:
+    """A settings file of the tests' own: never the user's."""
+    path = tmp_path_factory.mktemp("settings") / "settings.json"
+    monkeypatch.setenv("RADMODELING_SETTINGS", str(path))
+    return path
+
+
 @pytest.fixture
 def cad_model(tmp_path: Path) -> Path:
     return models.write_cad(tmp_path / "machine.step")

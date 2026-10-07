@@ -33,7 +33,7 @@ from OCP.TopoDS import TopoDS_Shape, TopoDS_Solid
 from radmodeling.cad.analysis import ShapeReport, analyse
 from radmodeling.cad.occ import GeometryMap, volume_and_centroid
 from radmodeling.cad.step import Part, compound, read_step, write_step
-from radmodeling.compare import MM_PER_CM, Comparison
+from radmodeling.compare import MM_PER_CM, Comparison, VolumeComparison
 from radmodeling.mcnp.geometry import Geometry
 from radmodeling.mcnp.tags import cells_by_instance
 from radmodeling.registry import (
@@ -115,7 +115,7 @@ def _combine(reports: list[ShapeReport]) -> ShapeReport:
     )
 
 
-def read_model(path: str | os.PathLike) -> list[Part]:
+def read_parts(path: str | os.PathLike) -> list[Part]:
     """Read a model to match with the registry.
 
     The solids of untagged parts are read with their own names, where SpaceClaim may
@@ -289,7 +289,6 @@ def _new_component(key: Key, instance: Instance, **values) -> Component:
 def init(
     original_step: str | os.PathLike,
     tagged_step: str | os.PathLike,
-    registry_csv: str | os.PathLike,
     per_solid: bool = False,
 ) -> Registry:
     """Tag the part definitions of a model and create its registry.
@@ -297,7 +296,8 @@ def init(
     All the instances of a part get the same tag and stay linked in the tagged model.
     Each instance gets its own row in the registry. Components that already carry a
     tag keep it, so running this on a model that was partially tagged before only
-    adds the new components.
+    adds the new components. Writes the tagged model and returns the registry,
+    which the caller saves.
     """
     parts = read_step(original_step)
     if per_solid:
@@ -341,7 +341,6 @@ def init(
         )
 
     write_step(tagged_parts, tagged_step)
-    registry.save(registry_csv)
     return registry
 
 
@@ -364,6 +363,12 @@ def _split_solids(parts: list[Part]) -> list[Part]:
 
 
 # --- check -----------------------------------------------------------------------
+
+# Issues of 'check' worth a look but not necessarily wrong: tori are fine in MCNP with
+# their axis along X, Y or Z; components are often moved or deleted on purpose; new
+# components are added to the registry by 'check' itself. The CAD adapters colour
+# them yellow, the other issues red.
+WARNINGS = frozenset({"torus", "moved", "deleted", "new"})
 
 
 @dataclass
@@ -392,6 +397,21 @@ class CheckResult:
             }
         )
 
+    def issues(self) -> dict[str, list[int]]:
+        """IDs of the components with each kind of issue (the CAD adapters cannot
+        tell instances apart). The kinds in :data:`WARNINGS` are only warnings."""
+        matching = self.matching
+        return {
+            "volume": sorted({c.id for c in self.exceeding()}),
+            "unconvertible": self.with_issue(lambda r: r.unconvertible_surfaces),
+            "torus": self.with_issue(lambda r: r.has_torus),
+            "invalid": self.with_issue(lambda r: not r.valid),
+            "deleted": sorted({k.id for k in matching.missing}),
+            "extra": sorted({i.id for i in matching.extra if i.id is not None}),
+            "moved": sorted({k.id for k in matching.moved}),
+            "new": sorted({i.id for i in matching.new if i.id is not None}),
+        }
+
 
 def check(
     simplified_step: str | os.PathLike,
@@ -405,7 +425,7 @@ def check(
     ``new``), so they can get a material before the export. Copies and untagged parts
     are only added by :func:`export`.
     """
-    instances = find_instances(read_model(simplified_step), Measurer(analyse_geometry))
+    instances = find_instances(read_parts(simplified_step), Measurer(analyse_geometry))
     matching = match_instances(instances, registry)
     _add_new_components(matching, registry)
     for component in registry:
@@ -456,7 +476,7 @@ def export(
     as new instances of it with its material, and untagged parts as new components.
     """
     matching = match_instances(
-        find_instances(read_model(simplified_step), Measurer(analyse_geometry=False)),
+        find_instances(read_parts(simplified_step), Measurer(analyse_geometry=False)),
         registry,
     )
     added = _add_new_components(matching, registry)
@@ -535,16 +555,30 @@ def exported_solids(step: str | os.PathLike) -> dict[Key, list[TopoDS_Solid]]:
 
 
 def load_comparison(
-    step: str | os.PathLike,
     mcnp: str | os.PathLike,
+    step: str | os.PathLike,
     compared: Sequence[Key],
     n_points: int,
     entropy: int,
 ) -> Comparison:
-    """The comparison of a STEP file written by :func:`export` with the MCNP input
-    converted from it, as the worker processes of ``compare`` load it."""
+    """The comparison of an MCNP input with the STEP file written by :func:`export`
+    it was converted from, as the worker processes of ``compare`` load it."""
     geometry = Geometry.from_file(mcnp)
     cells = cells_by_instance(geometry.model)
     return Comparison(
         geometry, exported_solids(step), cells, compared, n_points, entropy
     )
+
+
+def record_mcnp_volumes(
+    registry: Registry,
+    results: Sequence[VolumeComparison],
+    tolerance_pct: float = VOLUME_TOLERANCE_PCT,
+) -> None:
+    """Save the MCNP volumes measured by 'compare', and so the density correction
+    factors, in the registry rows of the instances."""
+    for r in results:
+        if r.key in registry and not r.error:
+            registry[r.key].set_mcnp_volume(
+                r.mcnp_volume_cm3, r.mcnp_volume_std_cm3, tolerance_pct
+            )

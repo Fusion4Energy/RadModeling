@@ -8,9 +8,10 @@ mesh.
 from __future__ import annotations
 
 import math
+import os
 import unicodedata
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from OCP.BRepAdaptor import BRepAdaptor_Surface
@@ -19,6 +20,7 @@ from OCP.TopAbs import TopAbs_VERTEX
 from OCP.TopoDS import TopoDS, TopoDS_Solid
 
 from radmodeling.cad.occ import explore, faces, volume_mm3
+from radmodeling.cad.step import read_step
 
 MM_PER_CM = 10.0
 MAX_TRANSFORM = 999
@@ -142,3 +144,40 @@ def comment_line(text: str) -> str:
     """MCNP comment card: ASCII only (accents dropped), within the line length."""
     ascii_text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
     return f"c {' '.join(ascii_text.split())}"[:LINE_LENGTH].rstrip()
+
+
+@dataclass
+class FmeshCards:
+    text: str = ""  # the cards, each after a comment line with the box name
+    tallies: list[tuple[int, str, list[int]]] = field(default_factory=list)
+    skipped: list[tuple[str, str]] = field(default_factory=list)  # name, why
+
+
+def fmesh_cards(step: str | os.PathLike, size: float) -> FmeshCards:
+    """FMESH cards for every box of a STEP file, with voxels of about ``size`` cm.
+
+    The tallies are numbered from :data:`FIRST_TALLY` in steps of 10, and rotated
+    boxes get transforms numbered from :data:`FIRST_TRANSFORM`.
+    """
+    if size <= 0:
+        raise ValueError("the voxel size must be positive")
+    result = FmeshCards()
+    cards = []
+    number, tr = FIRST_TALLY, FIRST_TRANSFORM
+    # SpaceClaim names the solids after the bodies: a few boxes, so reading is fast
+    for part in read_step(step, body_names=lambda _: True):
+        for k, solid in enumerate(part.solids):
+            name = part.body_names[k] if k < len(part.body_names) else ""
+            name = name or part.name
+            try:
+                box = box_from_solid(solid)
+                card = fmesh_card(box, number, size=size, transform=tr)
+            except ValueError as exc:
+                result.skipped.append((name, str(exc)))
+                continue
+            cards.append(comment_line(name) + "\n" + card)
+            result.tallies.append((number, name, voxel_counts(box, size)))
+            number += 10
+            tr += 0 if box.axis_aligned else 1
+    result.text = "".join(cards)
+    return result

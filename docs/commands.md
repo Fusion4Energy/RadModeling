@@ -13,6 +13,12 @@ print which one they picked. If there are several, they stop and ask for `-r`.
 `compare` only updates the registry it finds when there is one; `--no-registry`
 skips the update.
 
+The commands that read an MCNP input take it first, then the STEP file written by
+`export` (`radmod compare MODEL.mcnp EXPORT.step`). Every command that writes a file
+names it after its input (`MODEL_compare.csv`, `MODEL_atlas.pdf`...); `-o` writes it
+elsewhere. Options shared by several commands (`--points`, `--seed`, `--jobs`,
+`--components`, `-l`) mean the same in all of them.
+
 ## Workflow
 
 ### init
@@ -22,7 +28,7 @@ radmod init ORIGINAL.step
 ```
 
 Tag the components and create the registry: writes `ORIGINAL_simplified.step`, the
-model to simplify, and `ORIGINAL_registry.csv`. See
+model to simplify (or `-o`), and `ORIGINAL_registry.csv` (or `-r`). See
 [CAD to MCNP workflow](workflow.md).
 
 ### check
@@ -31,7 +37,8 @@ model to simplify, and `ORIGINAL_registry.csv`. See
 radmod check SIMPLIFIED.step -r REGISTRY
 ```
 
-Volume deviations and geometry diagnostics of a simplified model.
+Volume deviations and geometry diagnostics of a simplified model. The volume
+tolerance is the `volume-tolerance` setting (see [config](#config)).
 
 ### export
 
@@ -47,11 +54,11 @@ how `compare`, `materials` and `slice` find the cells of each component.
 ### compare
 
 ```bash
-radmod compare EXPORT.step MODEL.mcnp
+radmod compare MODEL.mcnp EXPORT.step
 ```
 
 CAD vs MCNP volumes and discrepancies per instance, written to `MODEL_compare.csv`
-(or `--report`; not written with `--components`), and the volume shared by the
+(or `-o`; not written with `--components` unless `-o` is given), and the volume shared by the
 cells of different instances (or by cells of the same instance). A clash in the CAD,
 such as a bolt left inside a plate, converts faithfully: each instance agrees with its
 own cells, but their cells overlap. Each pair is measured from the points sampled
@@ -60,15 +67,16 @@ can be missed, so raise `--points` to look closer. `--components 3,7.2` limits i
 to some components (all instances of 3, instance 2 of 7), `--points` sets the
 samples per instance (100 000 by default). Every instance gets its own random
 points from `--seed` and its key, so a result does not depend on the other instances
-compared.
+compared. Instances whose discrepancy is beyond the `max-discrepancy` setting (1 % by default,
+see [config](#config)) are reported as problems.
 
 The instances are compared in parallel by `--jobs` worker processes (one per CPU, at
 most 8, by default). Each worker reads the STEP file and the MCNP input itself and
 keeps its own copy in memory: lower `--jobs` for very large models.
 
 The MCNP volumes go into the registry with the density correction factors they give
-(`dcf`): original / MCNP volume when they differ by more than `--tolerance` (1 % by
-default, as in `check`) plus three standard deviations, else 1. All the factors are
+(`dcf`): original / MCNP volume when they differ by more than the `volume-tolerance`
+setting (1 % by default, as in `check`) plus three standard deviations, else 1. All the factors are
 recomputed, including those edited by hand.
 
 ### materials
@@ -85,29 +93,49 @@ material 0 and no density in all their cells; they need no library entry.
 ### slice
 
 ```bash
-radmod slice MODEL.mcnp -o SLICE.png
+radmod slice MODEL.mcnp [EXPORT.step]
 ```
 
-Slice plot. `--normal` is `x`, `y`, `z` or any vector such as `1,1,0`; `--origin`
-is the centre of the image; `--step` overlays the CAD and, with the STEP file from
-`export`, highlights CAD/MCNP mismatches. Cells are coloured by material; void
+Slice plot, written to `MODEL_slice.png` (or `-o`). `--normal` is `x`, `y`, `z` or
+any vector such as `1,1,0`; `--origin` is the centre of the image. A STEP file
+overlays the CAD and, with the one from `export`, highlights CAD/MCNP mismatches. Cells are coloured by material; void
 cells of a component (tagged) are light grey and the untagged void around the
 components is near-white.
 
 ### atlas
 
 ```bash
-radmod atlas MODEL.mcnp --step EXPORT.step -o ATLAS.pdf
+radmod atlas MODEL.mcnp EXPORT.step
 ```
 
-PDF with a summary of the problems of every slice, evenly spaced slices across the
+PDF (`MODEL_atlas.pdf`, or `-o`) with a summary of the problems of every slice, evenly spaced slices across the
 model (`--planes x:3,y:3,z:6`) and a slice through each problem of the `--worst`
 instances, found by sampling every instance like `compare` (`--points`). Small
 problems are circled and zoomed on their own pages. The report of `compare`
 (`MODEL_compare.csv` for `MODEL.mcnp` or `MODEL_*.mcnp`, or `--report`) is used when
 found: only the instances it reports are searched. It must come from the current
-geometry and STEP file; `--no-report` searches every instance. The instances are
-searched and the slices classified in parallel, like `compare` (`--jobs`).
+geometry and STEP file; `--no-report` searches every instance. `--components`
+limits the search like in `compare`. The instances are searched and the slices
+classified in parallel, like `compare` (`--jobs`).
+
+## Settings
+
+### config
+
+```bash
+radmod config                         # list the settings
+radmod config volume-tolerance        # show one
+radmod config volume-tolerance 1.5    # change it
+radmod config volume-tolerance --unset
+```
+
+Your settings, kept in a file of your user account (the path is printed with the
+list) and read by every command and by the SpaceClaim tools:
+
+| Setting            | Used by                                                      | Default |
+| ------------------ | ------------------------------------------------------------ | ------- |
+| `volume-tolerance` | `check`, the DCF of `compare`, the SpaceClaim volume tools   | 1 %     |
+| `max-discrepancy`  | problems reported by `compare` and sliced by `atlas`         | 1 %     |
 
 ## SpaceClaim
 

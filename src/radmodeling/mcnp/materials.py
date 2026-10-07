@@ -65,6 +65,14 @@ class MaterialLibrary:
     def get(self, name: str) -> Material | None:
         return self._index.get(_key(name))
 
+    def names_by_number(self) -> dict[int, str]:
+        """Names to show for the MCNP material numbers, such as 'SS316L (m10)'."""
+        return {
+            m.number: f"{m.name} (m{m.number})"
+            for m in self.materials
+            if m.number is not None
+        }
+
 
 def _key(name: str) -> str:
     return " ".join(name.lower().split())

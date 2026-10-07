@@ -52,7 +52,7 @@ moved components (which may be moved on purpose), components with deleted instan
 (the instances left are coloured) and new components (just added to the registry
 with status `new`). The document is not changed, so the `.scdocx` stays the working file. The
 registry must not be open in Excel, as the check updates it. SpaceClaim waits while the check runs. The volume tolerance is
-`VolumeTolerance` (passed as `--tolerance`).
+the `volume-tolerance` setting, as for `radmod check`.
 
 It runs `radmod` with the Python that wrote the loaders. Loaders written before this
 tool existed do not know it: write them again and publish *Check model*.
@@ -69,14 +69,14 @@ adds them to the registry.
 ### Check volumes
 
 Colours in red the instances whose volume differs from the original by more than
-`VolumeTolerance` (1 % by default), blue transparent the rest, and grey the untagged
+the `volume-tolerance` setting (1 % by default), blue transparent the rest, and grey the untagged
 bodies.
 
 ### Adjust volume
 
 Select one or more faces of a component and run it: the faces are extruded until the
-selected instance recovers its original volume, within half of `VolumeTolerance`
-(0.5 % by default), well inside what the checks accept.
+selected instance recovers its original volume, within half of the `volume-tolerance`
+setting (0.5 % by default), well inside what the checks accept.
 
 ### Show by material
 
@@ -135,13 +135,14 @@ reads and a value. Without the parameter, the tool uses its default.
 
 | Parameter          | Tools                                                                | Default |
 | ------------------ | -------------------------------------------------------------------- | ------- |
-| `VolumeTolerance`  | *Check model*, *Check volumes*, *Adjust volume* (aims at half of it) | 1 %     |
 | `ElbowMaxAngle`    | *Replace elbows*: maximum turn per segment                           | 22.5°   |
 | `ElbowMinSegments` | *Replace elbows*: minimum segments per bend                          | 2       |
 | `PointRadius`      | *Load points*: sphere radius                                         | 20 mm   |
 | `FmeshVoxelSize`   | *Fmesh*: maximum voxel size                                          | 5 cm    |
 
-`VolumeTolerance` only reaches `radmod check` through *Check model*: run from a
-terminal, `radmod check` takes `--tolerance` (1 % by default). Pass the same value to
-`radmod compare --tolerance`, which leaves the density correction factors within it
-at 1.
+The volume tolerance is not a script parameter: *Check model*, *Check volumes* and
+*Adjust volume* use the `volume-tolerance` setting, like `radmod check` and
+`radmod compare`, so it is set once for all of them with
+`radmod config volume-tolerance VALUE` (see [Commands](commands.md#config)). Loaders
+written before the setting existed do not know where it is: write them again with
+`radmod spaceclaim-loaders` and publish them again.

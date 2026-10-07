@@ -21,10 +21,11 @@ zensical serve
 
 ```text
 src/radmodeling/
-  cli.py            the radmod command line interface
+  cli.py            the radmod command line interface: options and printing only
+  settings.py       per-user settings (radmod config), shared with SpaceClaim
   registry.py       component registry and [rmID] tags
   workflow.py       init, check and export
-  compare.py        CAD vs MCNP sampling and slices
+  compare.py        CAD vs MCNP sampling, slices and the compare report
   slices.py         slices of a model and the planes of the atlas
   plot.py           slice and atlas rendering
   fmesh.py          FMESH cards from boxes
@@ -38,6 +39,12 @@ docs/               this documentation (Markdown, built by zensical.toml)
 
 ## Principles
 
+* The `radmod` command is the public interface; the Python modules are internal and
+  change with it. The commands stay consistent: an MCNP input comes first and the
+  STEP file from `export` second, every written file has `-o` and a default named
+  after the input, and options shared by several commands are defined once in
+  `cli.py`. The library functions take and return loaded objects (a `Registry`, a
+  model) and leave reading and saving the registry to the CLI.
 * Everything that can be computed from files lives in the Python package and is
   tested. CAD programs only do what needs a human.
 * MCNP inputs are read and written with migjorn, which preserves the input byte for

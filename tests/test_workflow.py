@@ -101,7 +101,8 @@ def simplify(tagged, output):
 def test_init_check_export(tmp_path, cad_model):
     tagged = tmp_path / "tagged.step"
     registry_csv = tmp_path / "registry.csv"
-    registry = workflow.init(cad_model, tagged, registry_csv)
+    registry = workflow.init(cad_model, tagged)
+    registry.save(registry_csv)
     assert [c.name for c in registry] == ["Block", "Pipe", "Ball", "Bolts"]
     assert registry[4, 1].original_solids == 2
     assert registry[2, 1].levels == ("Machine", "Piping")
@@ -161,7 +162,8 @@ def simplify_bolts(tagged, output):
 def test_instances_are_simplified_once_and_tracked_one_by_one(tmp_path):
     original = models.write_instanced_cad(tmp_path / "bolts.step")
     tagged, registry_csv = tmp_path / "tagged.step", tmp_path / "registry.csv"
-    registry = workflow.init(original, tagged, registry_csv)
+    registry = workflow.init(original, tagged)
+    registry.save(registry_csv)
     assert [str(c.key) for c in registry] == [
         "1.1", "2.1", "2.2", "2.3", "2.4", "2.5", "2.6"
     ]  # fmt: skip
@@ -233,7 +235,7 @@ def test_new_tags_become_new_components(tmp_path, cad_model):
     """A tag written in the CAD after init adds a component, only once: on check, or
     on export for a model that was not checked."""
     tagged, registry_csv = tmp_path / "tagged.step", tmp_path / "registry.csv"
-    workflow.init(cad_model, tagged, registry_csv)
+    workflow.init(cad_model, tagged).save(registry_csv)
     shield = models.cylinder(300, 0, 0, 10, 10)
     parts = read_step(tagged)
     parts += [
@@ -270,7 +272,8 @@ def test_tags_left_only_on_bodies_are_found(tmp_path):
     original = tmp_path / "pipe.step"
     write_step([Part("Pipe", ("Machine",), models.pipe())], original)
     tagged, registry_csv = tmp_path / "tagged.step", tmp_path / "registry.csv"
-    registry = workflow.init(original, tagged, registry_csv)
+    registry = workflow.init(original, tagged)
+    registry.save(registry_csv)
     text = tagged.read_text().replace("'Pipe [rm1]'", "'SOLID'")
     text = text.replace("MANIFOLD_SOLID_BREP(''", "MANIFOLD_SOLID_BREP('Pipe [rm1]'")
     assert text.count("Pipe [rm1]") == 1
@@ -674,8 +677,8 @@ def test_cli_compare_reports_overlapping_pairs_once(tmp_path):
     mcnp.write_text(models.clash_mcnp_text())
     report = tmp_path / "compare.csv"
     output = run(
-        "compare", exported, mcnp, "--no-registry", "--points", "20000",
-        "--seed", "2", "--report", report,
+        "compare", mcnp, exported, "--no-registry", "--points", "20000",
+        "--seed", "2", "-o", report,
     )  # fmt: skip
     assert "2 instances agree" in output
     assert "1 overlapping pairs" in output
@@ -705,8 +708,8 @@ def test_cli_compare_with_workers_gives_the_same_results(tmp_path):
     reports = []
     for jobs in (1, 2):
         report = tmp_path / f"compare_{jobs}.csv"
-        args = ["compare", exported, mcnp, "--no-registry", "--points", "5000",
-                "--seed", "3", "--report", report, "--jobs", jobs]  # fmt: skip
+        args = ["compare", mcnp, exported, "--no-registry", "--points", "5000",
+                "--seed", "3", "-o", report, "--jobs", jobs]  # fmt: skip
         result = runner.invoke(app, [str(a) for a in args])
         assert result.exit_code == 0, result.output
         reports.append(report.read_text())
@@ -745,7 +748,7 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
     assert issues["problems"]["volume"] == []
     assert set(issues["warnings"]) == {"torus", "moved", "deleted", "new"}
     assert f"Registry: {registry}" in output.replace("\n", "")
-    assert "Instances beyond volume tolerance: 0" in output
+    assert "Instances beyond the volume tolerance (1 %): 0" in output
 
     run("export", simplified)
     exported = cad_model.with_name("machine_export.step")
@@ -755,7 +758,7 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
     model.offset_cells(100)
     model.save(str(mcnp))
 
-    output = run("compare", exported, mcnp, "--seed", "1", "--points", "20000")
+    output = run("compare", mcnp, exported, "--seed", "1", "--points", "20000")
     assert "4 instances agree" in output
     ball = Registry.load(registry)[3, 1]
     assert ball.dcf == pytest.approx(1, abs=0.01)
@@ -769,10 +772,9 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
     output = run(
         "slice",
         mcnp.with_name("model_materials.mcnp"),
+        exported,
         "-o",
         png,
-        "--step",
-        exported,
         "--resolution",
         "200",
     )
@@ -819,7 +821,7 @@ def test_registry_is_found_only_when_unambiguous(tmp_path, monkeypatch):
     mcnp = tmp_path / "model.mcnp"
     mcnp.write_text(models.mcnp_text())
     before = registry.read_bytes()
-    args = ("compare", exported, mcnp, "--points", "2000")
+    args = ("compare", mcnp, exported, "--points", "2000")
     result = run(*args, "--no-registry")
     assert result.exit_code == 0, result.output
     assert registry.read_bytes() == before
@@ -835,7 +837,7 @@ def test_registry_is_found_only_when_unambiguous(tmp_path, monkeypatch):
     assert not (tmp_path / "again.step").exists()
 
 
-def test_spaceclaim_loaders(tmp_path):
+def test_spaceclaim_loaders(tmp_path, user_settings):
     import sys
 
     from typer.testing import CliRunner
@@ -851,6 +853,8 @@ def test_spaceclaim_loaders(tmp_path):
     assert text.startswith("# Python Script, API Version = V241")
     # 'Check model' runs radmod with the Python that wrote the loaders
     assert f'RADMODELING_PYTHON = r"{sys.executable}"' in text
+    # The volume tools read the volume tolerance set with 'radmod config'
+    assert f'RADMODELING_SETTINGS = r"{user_settings}"' in text
     folder = text.split('RADMODELING_SPACECLAIM = r"')[1].split('"')[0]
     for script in ("_rm.py", "check_volumes.py"):
         assert (Path(folder) / script).exists()

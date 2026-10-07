@@ -59,6 +59,12 @@ keep all code in `radmodeling`.
 ## Conventions
 
 - CAD lengths in mm, MCNP in cm; registry volumes in cm3 (`MM_PER_CM` in compare).
+- CLI shape: MCNP input first, export STEP second; every written file has `-o` and a
+  default named after the input; shared options are `Annotated` aliases in `cli.py`.
+- Per-user settings (`volume-tolerance`, `max-discrepancy`) are in `settings.py`, set
+  with `radmod config` and read by the SpaceClaim tools too (path in the loaders).
+  They are not command options as well: one place to set them.
+  Tests get their own file through `RADMODELING_SETTINGS` (`conftest.py`).
 - Escape user strings in rich output with `esc()` in `cli.py`: tags look like markup.
 - Tags are `[rm12]`, not `[rm:12]`: SpaceClaim's STEP export drops colons from names.
 - Slice colours follow the validated categorical palette in `plot.py`; red is

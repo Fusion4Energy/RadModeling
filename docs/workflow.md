@@ -111,7 +111,7 @@ instance and a single body are matched anyway and reported as moved.
 ## 4. Check the simplified model
 
 ```bash
-radmod check machine_simplified.step -r machine_registry.csv --tolerance 1
+radmod check machine_simplified.step -r machine_registry.csv
 ```
 
 `-r` can be left out when `machine_registry.csv` is the only registry next to the
@@ -124,7 +124,8 @@ click. The STEP written by `init` is not needed once the work has started: the
 registry keeps the original volumes and positions. `check` and `export` warn when a `.scdocx` of the same name was saved after the STEP file, as they would read an older
 model.
 
-Reports the instances beyond the volume tolerance, and the geometry that will cause
+Reports the instances beyond the volume tolerance (the `volume-tolerance` setting, 1 %
+by default: change it once with `radmod config volume-tolerance 2`), and the geometry that will cause
 trouble in the conversion: surfaces a CSG converter cannot translate (splines, offset
 surfaces...), tori and invalid solids. It also lists deleted instances, extra
 instances (copies of a component), moved components, new components (tags not in the
@@ -169,7 +170,7 @@ the converter has an option for it, and convert the STEP file as written by
 ## 6. Compare CAD and MCNP
 
 ```bash
-radmod compare machine_export.step machine_export.mcnp -r machine_registry.csv
+radmod compare machine_export.mcnp machine_export.step -r machine_registry.csv
 ```
 
 For every instance, random points are classified against both the CAD solids and the
@@ -188,7 +189,8 @@ the instances of component 3 and instance 2 of component 7. This gives:
   the registry with the density correction factor it gives (`dcf`, see
   [Assign the materials](#7-assign-the-materials)).
 * the **discrepancy**: the volume where CAD and MCNP disagree, relative to the CAD
-  volume. Above the `--threshold` (1 % by default) the component is reported.
+  volume. Above the `max-discrepancy` setting (1 % by default, `radmod config`) the
+  component is reported.
 * a warning when the cells reach the border of the sampled boxes, meaning they extend
   well beyond the CAD solids.
 * the **overlaps**: the volume the cells of the instance share with the cells of other
@@ -199,8 +201,8 @@ Instances of the STEP file without tagged cells are reported with a 100 %
 discrepancy, and cell tags of instances that are not in the STEP file are listed.
 
 The full results are written to `machine_export_compare.csv` next to `machine_export.mcnp` (or to
-`--report`), where the atlas finds them. With `--components` no report is written
-unless `--report` is given: a partial report would hide the other instances from the
+`-o`), where the atlas finds them. With `--components` no report is written
+unless `-o` is given: a partial report would hide the other instances from the
 atlas.
 
 ## 7. Assign the materials
@@ -217,7 +219,7 @@ the registry can be fixed in one go.
 The DCF applied is the `dcf` column of the registry, so what the registry shows is
 what goes into the input. `compare` writes it, and no other command changes it.
 It is 1 unless the MCNP volume differs from the original one by more than the volume
-tolerance (`compare --tolerance`, 1 % by default, as in `check`) plus three standard
+tolerance (the `volume-tolerance` setting, 1 % by default, as in `check`) plus three standard
 deviations. The tolerance is the volume difference already accepted when
 simplifying: correcting it in the densities would contradict `check`, and it does not
 add up, as the mass of the whole model is then also within the tolerance. Beyond it,
@@ -251,8 +253,8 @@ have no card in the input yet.
 ## 8. Look at it
 
 ```bash
-radmod slice machine_export_materials.mcnp -o slice.png --normal z --origin 0,0,120 \
-    --width 400 --step machine_export.step
+radmod slice machine_export_materials.mcnp machine_export.step -o slice.png \
+    --normal z --origin 0,0,120 --width 400
 ```
 
 Plots the MCNP cells coloured by material with the CAD section on top. Regions in no
@@ -263,13 +265,13 @@ slice covers the whole CAD model.
 For a document that covers the whole model, write an atlas:
 
 ```bash
-radmod atlas machine_export_materials.mcnp --step machine_export.step -o atlas.pdf \
+radmod atlas machine_export_materials.mcnp machine_export.step -o atlas.pdf \
     --planes x:3,y:3,z:6 --worst 20
 ```
 
 With the STEP file from `export`, the atlas first searches every instance for
 problems in 3D, sampling it like `compare` does (`--points`): CAD/MCNP mismatches
-beyond `--threshold` and overlapping cells. Slices alone would only find the problems
+beyond the `max-discrepancy` setting and overlapping cells. Slices alone would only find the problems
 their planes happen to cut. The PDF has:
 
 * **summary pages** with one row per page: the pixels in no cell, in several cells
