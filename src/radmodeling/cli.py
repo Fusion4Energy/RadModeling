@@ -485,13 +485,6 @@ def compare(
     no_registry: Annotated[
         bool, typer.Option("--no-registry", help="Do not update any registry.")
     ] = False,
-    output: Annotated[
-        Path | None,
-        _output(
-            "Report CSV with the full results. Default: MODEL_compare.csv, where "
-            "'atlas' finds it (not written with --components)."
-        ),
-    ] = None,
     components: ComponentsOption = None,
     points: PointsOption = 100_000,
     seed: SeedOption = None,
@@ -505,12 +498,7 @@ def compare(
     density correction factors (1 within the volume-tolerance setting) are saved in
     the registry.
     """
-    from radmodeling.compare import (
-        Comparison,
-        overlap_pairs,
-        report_path,
-        write_report,
-    )
+    from radmodeling.compare import Comparison, overlap_pairs
     from radmodeling.mcnp.geometry import Geometry
     from radmodeling.mcnp.tags import cells_by_instance
     from radmodeling.parallel import Workers
@@ -613,11 +601,6 @@ def compare(
             f"MCNP volumes and DCFs (volume tolerance {config.volume_tolerance:g} %) "
             f"saved in {esc(str(registry))}."
         )
-    if output is None and not components:
-        output = report_path(mcnp)
-    if output:
-        write_report(results, output)
-        console.print(f"Results written to {esc(str(output))}")
 
 
 def _cells_text(cells: list[int]) -> str:
@@ -641,6 +624,7 @@ def slice_(
     output: Annotated[
         Path | None, _output("PNG to write. Default: MODEL_slice.png.")
     ] = None,
+    library: LibraryOption = None,
     normal: Annotated[
         str, typer.Option(help="'x', 'y', 'z' or a vector such as '0,1,1'.")
     ] = "z",
@@ -650,7 +634,6 @@ def slice_(
     width: Annotated[float | None, typer.Option(help="Width [cm].")] = None,
     height: Annotated[float | None, typer.Option(help="Height [cm].")] = None,
     resolution: ResolutionOption = 800,
-    library: LibraryOption = None,
 ) -> None:
     """Plot a slice of the MCNP geometry, optionally overlaid with the CAD.
 
@@ -736,31 +719,17 @@ def atlas(
     output: Annotated[
         Path | None, _output("PDF to write. Default: MODEL_atlas.pdf.")
     ] = None,
+    library: LibraryOption = None,
     planes: Annotated[
         str,
         typer.Option(help="Evenly spaced planes normal to each axis, e.g. 'x:3,z:6'."),
     ] = "x:3,y:3,z:3",
-    report: Annotated[
-        Path | None,
-        typer.Option(
-            help="Report CSV of 'compare' on this geometry: only its problem instances "
-            "are searched again, to locate the problems. Default: MODEL_compare.csv "
-            "for MODEL.mcnp or MODEL_*.mcnp, if there is one."
-        ),
-    ] = None,
-    no_report: Annotated[
-        bool,
-        typer.Option(
-            "--no-report", help="Search every instance, even with a report around."
-        ),
-    ] = False,
+    resolution: ResolutionOption = 400,
     components: ComponentsOption = None,
     worst: Annotated[
         int, typer.Option(help="Maximum number of problem instances sliced.")
     ] = 20,
     points: PointsOption = 100_000,
-    resolution: ResolutionOption = 400,
-    library: LibraryOption = None,
     seed: SeedOption = None,
     jobs: JobsOption = 0,
 ) -> None:
@@ -772,7 +741,6 @@ def atlas(
     their own pages. The first pages summarise the pixels in no cell, in several
     cells and where CAD and MCNP disagree for every slice.
     """
-    from radmodeling.compare import find_report, read_problems
     from radmodeling.parallel import Workers
     from radmodeling.plot import write_atlas
     from radmodeling.slices import (
@@ -799,33 +767,14 @@ def atlas(
         _fail(f"{step} has no solids")
     todo = overview_planes(*bounds, counts)
 
-    if (report or components) and not scene.compares:
-        option = "--report" if report else "--components"
-        _fail(f"{option} needs the STEP file written by 'export', not {step}")
-    if no_report:
-        report = None
-    elif report is None and scene.compares:
-        report = find_report(mcnp)
+    if components and not scene.compares:
+        _fail(f"--components needs the STEP file written by 'export', not {step}")
     keys = []
     if not scene.compares:
         console.print(
             f"[yellow]{esc(str(step))} is not from 'export' (or no cell is tagged): "
             "only the overview slices are drawn, without searching for problems[/]"
         )
-    elif report:
-        console.print(
-            f"[yellow]Using {esc(str(report))}: only the instances it reports are "
-            "searched. It must come from 'compare' on this geometry and STEP file: "
-            "run 'compare' again after changing them, or use --no-report.[/]"
-        )
-        keys = [p.key for p in read_problems(report, max_discrepancy)]
-        missing = [k for k in keys if k not in scene.instances]
-        if missing:
-            _fail(
-                f"instances of {report} not in {step}: {_keys_text(missing)} "
-                "(a report of another model?)"
-            )
-        keys = _select(keys, components)
     else:
         keys = _select(scene.instances, components)
 
@@ -855,10 +804,11 @@ def atlas(
             for i, item in enumerate(pool.map(Atlas.draw, todo), 1):
                 status.update(f"Sliced {i}/{len(todo)} planes")
                 slices.append(item)
-    header = [f"MCNP input: {mcnp}", f"CAD: {step}"]
-    if report:
-        header.append(f"Problem instances from: {report}")
-    header.append(f"Maximum discrepancy: {max_discrepancy:g} %")
+    header = [
+        f"MCNP input: {mcnp}",
+        f"CAD: {step}",
+        f"Maximum discrepancy: {max_discrepancy:g} %",
+    ]
     with console.status("Writing the PDF..."):
         write_atlas(slices, output, scene.slots, scene.material_names, header)
 

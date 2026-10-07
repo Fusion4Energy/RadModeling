@@ -25,7 +25,7 @@ src/radmodeling/
   settings.py       per-user settings (radmod config), shared with SpaceClaim
   registry.py       component registry and [rmID] tags
   workflow.py       init, check and export
-  compare.py        CAD vs MCNP sampling, slices and the compare report
+  compare.py        CAD vs MCNP sampling and slices
   slices.py         slices of a model and the planes of the atlas
   plot.py           slice and atlas rendering
   fmesh.py          FMESH cards from boxes

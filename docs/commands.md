@@ -15,7 +15,7 @@ skips the update.
 
 The commands that read an MCNP input take it first, then the STEP file written by
 `export` (`radmod compare MODEL.mcnp EXPORT.step`). Every command that writes a file
-names it after its input (`MODEL_compare.csv`, `MODEL_atlas.pdf`...); `-o` writes it
+names it after its input (`MODEL_materials.mcnp`, `MODEL_atlas.pdf`...); `-o` writes it
 elsewhere. Options shared by several commands (`--points`, `--seed`, `--jobs`,
 `--components`, `-l`) mean the same in all of them.
 
@@ -57,8 +57,7 @@ how `compare`, `materials` and `slice` find the cells of each component.
 radmod compare MODEL.mcnp EXPORT.step
 ```
 
-CAD vs MCNP volumes and discrepancies per instance, written to `MODEL_compare.csv`
-(or `-o`; not written with `--components` unless `-o` is given), and the volume shared by the
+CAD vs MCNP volumes and discrepancies per instance, and the volume shared by the
 cells of different instances (or by cells of the same instance). A clash in the CAD,
 such as a bolt left inside a plate, converts faithfully: each instance agrees with its
 own cells, but their cells overlap. Each pair is measured from the points sampled
@@ -68,7 +67,8 @@ to some components (all instances of 3, instance 2 of 7), `--points` sets the
 samples per instance (100 000 by default). Every instance gets its own random
 points from `--seed` and its key, so a result does not depend on the other instances
 compared. Instances whose discrepancy is beyond the `max-discrepancy` setting (1 % by default,
-see [config](#config)) are reported as problems.
+see [config](#config)) are reported as problems, with every overlapping pair. The
+MCNP volumes are saved in the registry: `compare` writes no other file.
 
 The instances are compared in parallel by `--jobs` worker processes (one per CPU, at
 most 8, by default). Each worker reads the STEP file and the MCNP input itself and
@@ -111,11 +111,9 @@ radmod atlas MODEL.mcnp EXPORT.step
 PDF (`MODEL_atlas.pdf`, or `-o`) with a summary of the problems of every slice, evenly spaced slices across the
 model (`--planes x:3,y:3,z:6`) and a slice through each problem of the `--worst`
 instances, found by sampling every instance like `compare` (`--points`). Small
-problems are circled and zoomed on their own pages. The report of `compare`
-(`MODEL_compare.csv` for `MODEL.mcnp` or `MODEL_*.mcnp`, or `--report`) is used when
-found: only the instances it reports are searched. It must come from the current
-geometry and STEP file; `--no-report` searches every instance. `--components`
-limits the search like in `compare`. The instances are searched and the slices
+problems are circled and zoomed on their own pages. It does not depend on an earlier
+`compare`: every instance is searched again, so the atlas always shows the current
+geometry. `--components` limits the search like in `compare`. The instances are searched and the slices
 classified in parallel, like `compare` (`--jobs`).
 
 ## Settings

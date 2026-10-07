@@ -17,13 +17,10 @@ Lengths: the CAD is in mm and MCNP in cm. Results are reported in cm and cm3.
 
 from __future__ import annotations
 
-import csv
 import itertools
 import math
-import os
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from pathlib import Path
 
 import numpy as np
 from OCP.TopoDS import TopoDS_Shape
@@ -34,7 +31,6 @@ from radmodeling.mcnp.geometry import Geometry
 from radmodeling.registry import Key
 
 MM_PER_CM = 10.0
-REPORT_SUFFIX = "_compare.csv"  # report of 'compare' on MODEL.mcnp: MODEL_compare.csv
 
 
 @dataclass
@@ -94,106 +90,6 @@ def overlap_pairs(
         for r in results
         for other, overlap in r.overlaps.items()
     }
-
-
-# --- report --------------------------------------------------------------------------
-
-REPORT_COLUMNS = [
-    "component_id",
-    "instance",
-    "cells",
-    "cad_volume_cm3",
-    "mcnp_volume_cm3",
-    "mcnp_volume_std_cm3",
-    "cad_only_cm3",
-    "mcnp_only_cm3",
-    "discrepancy_pct",
-    "touches_sampling_box",
-    "overlaps",
-    "error",
-]
-
-
-def report_path(mcnp: str | os.PathLike) -> Path:
-    """Where 'compare' writes its report by default: MODEL_compare.csv."""
-    mcnp = Path(mcnp)
-    return mcnp.with_name(mcnp.stem + REPORT_SUFFIX)
-
-
-def find_report(mcnp: str | os.PathLike) -> Path | None:
-    """The report of 'compare' on MODEL.mcnp for MODEL.mcnp or MODEL_*.mcnp (such as
-    MODEL_materials.mcnp, written by 'materials'): the longest such MODEL wins."""
-    mcnp = Path(mcnp)
-    names = [
-        p
-        for p in mcnp.resolve().parent.glob("*" + REPORT_SUFFIX)
-        if mcnp.stem == (stem := p.name[: -len(REPORT_SUFFIX)])
-        or mcnp.stem.startswith(stem + "_")
-    ]
-    return max(names, key=lambda p: len(p.name), default=None)
-
-
-def write_report(results: Iterable[VolumeComparison], path: str | os.PathLike) -> None:
-    """Write the full results of 'compare' as CSV (read by :func:`read_problems`)."""
-    with open(path, "w", encoding="utf-8", newline="") as outfile:
-        writer = csv.writer(outfile)
-        writer.writerow(REPORT_COLUMNS)
-        for r in results:
-            writer.writerow(
-                [
-                    r.key.id,
-                    r.key.instance,
-                    " ".join(map(str, r.cells)),
-                    r.cad_volume_cm3,
-                    r.mcnp_volume_cm3,
-                    r.mcnp_volume_std_cm3,
-                    r.cad_only_cm3,
-                    r.mcnp_only_cm3,
-                    r.discrepancy_pct,
-                    r.touches_sampling_box,
-                    " ".join(
-                        f"{k}:{volume:.6g}" for k, (volume, _) in r.overlaps.items()
-                    ),
-                    r.error,
-                ]
-            )
-
-
-@dataclass
-class Problem:
-    key: Key
-    discrepancy_pct: float
-    note: str = ""
-
-
-def read_problems(
-    report: str | os.PathLike, max_discrepancy: float = 1.0
-) -> list[Problem]:
-    """The instances of a 'compare' report beyond the maximum discrepancy, worst first.
-
-    Instances that could not be evaluated (no discrepancy) come first.
-    """
-    problems = []
-    with open(report, encoding="utf-8-sig", newline="") as infile:
-        for row in csv.DictReader(infile):
-            key = Key(int(row["component_id"]), int(row["instance"]))
-            discrepancy = float(row["discrepancy_pct"] or "nan")
-            notes = []
-            if row.get("error"):
-                notes.append(row["error"])
-            if not row.get("cells", "").strip():
-                notes.append("no tagged cells")
-            if row.get("touches_sampling_box") == "True":
-                notes.append("cells exceed the sampled box")
-            if row.get("overlaps", "").strip():
-                others = [o.partition(":")[0] for o in row["overlaps"].split()]
-                notes.append("overlaps " + ", ".join(others))
-            if math.isnan(discrepancy) or discrepancy > max_discrepancy or notes:
-                problems.append(Problem(key, discrepancy, "; ".join(notes)))
-    problems.sort(
-        key=lambda p: -math.inf if math.isnan(p.discrepancy_pct) else -p.discrepancy_pct
-    )
-    return problems
 
 
 class TaggedCells:

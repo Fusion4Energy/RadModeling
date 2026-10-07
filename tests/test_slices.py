@@ -1,4 +1,3 @@
-import math
 import re
 
 import models
@@ -11,8 +10,6 @@ from radmodeling.compare import (
     Plane,
     Spot,
     cluster_labels,
-    find_report,
-    read_problems,
 )
 from radmodeling.plot import slice_figure
 from radmodeling.registry import Key
@@ -57,31 +54,6 @@ def test_instance_plane_shows_the_largest_section():
     assert plane.height > 1.5
 
 
-def test_read_problems_worst_first(tmp_path):
-    report = tmp_path / "compare.csv"
-    report.write_text(
-        "component_id,instance,cells,discrepancy_pct,touches_sampling_box,overlaps,"
-        "error\n"
-        "1,1,1,0.2,False,,\n"
-        "2,1,2,5.0,False,,\n"
-        "3,1,3,25.0,False,,\n"
-        "4,1,4,0.1,True,,\n"
-        "5,1,,nan,False,,\n"
-        "6,2,7,nan,False,,unknown surface 99\n"
-        "7,1,8,0.05,False,8.1:2.5 7.1:0.1,\n"
-    )
-    problems = read_problems(report, max_discrepancy=1)
-    assert [p.key for p in problems] == [
-        (5, 1), (6, 2), (3, 1), (2, 1), (4, 1), (7, 1)
-    ]  # fmt: skip
-    assert problems[0].note == "no tagged cells"
-    assert problems[1].note == "unknown surface 99"
-    assert problems[4].note == "cells exceed the sampled box"
-    assert problems[5].note == "overlaps 8.1, 7.1"
-    assert math.isnan(problems[0].discrepancy_pct)
-    assert Key(1, 1) not in [p.key for p in problems]
-
-
 def test_atlas(tmp_path, cad_model):
     runner = CliRunner()
 
@@ -95,16 +67,10 @@ def test_atlas(tmp_path, cad_model):
     run("export", cad_model.with_name("machine_simplified.step"), "-o", exported)
     mcnp = tmp_path / "model.mcnp"
     mcnp.write_text(models.mcnp_text(ball_radius=2.6))  # the ball is too big
-    report = tmp_path / "compare.csv"
-    run(
-        "compare", mcnp, exported, "--no-registry", "--points", "5000",
-        "--seed", "1", "-o", report,
-    )  # fmt: skip
-
     pdf = tmp_path / "atlas.pdf"
     output = run(
         "atlas", mcnp, exported, "-o", pdf, "--planes", "z:2",
-        "--report", report, "--resolution", "80", "--seed", "1",
+        "--points", "5000", "--resolution", "80", "--seed", "1",
     )  # fmt: skip
     assert "Written 3 slices" in output
     data = pdf.read_bytes()
@@ -114,7 +80,7 @@ def test_atlas(tmp_path, cad_model):
 
     result = runner.invoke(
         app, ["atlas", str(mcnp), str(cad_model), "-o", str(pdf),
-              "--report", str(report)],
+              "--components", "3"],
     )  # fmt: skip
     assert result.exit_code == 1
     assert "needs the STEP file written by 'export'" in result.output
@@ -267,7 +233,7 @@ def test_tessellation_of_large_parts_is_not_a_mismatch():
     assert mismatch_pixels(100.1) > 1000  # a real 1 mm error is still a mismatch
 
 
-def test_atlas_finds_problems_without_a_report(clash, tmp_path):
+def test_atlas_finds_overlaps(clash, tmp_path):
     exported, mcnp = clash
     runner = CliRunner()
     pdf = tmp_path / "atlas.pdf"
@@ -280,36 +246,10 @@ def test_atlas_finds_problems_without_a_report(clash, tmp_path):
     # Summary, the overview slice and a slice through the overlap of the bolt
     assert len(re.findall(rb"/Type\s*/Page\b", data)) >= 3
 
-    assert "Using" not in result.output  # no report around: every instance searched
-
-    # The report of 'compare' on model.mcnp is used for model_materials.mcnp too
-    compare = ["compare", mcnp, exported, "--no-registry", "--points", "20000"]
-    result = runner.invoke(app, [str(a) for a in compare])
-    assert result.exit_code == 0, result.output
-    assert (tmp_path / "model_compare.csv").exists()
-    materials = tmp_path / "model_materials.mcnp"
-    materials.write_text(mcnp.read_text())
-    args[1] = materials
-    result = runner.invoke(app, [str(a) for a in args])
-    assert result.exit_code == 0, result.output
-    output = result.output.replace("\n", "")
-    assert "model_compare.csv: only the instances it reports" in output
-    assert "Instances with problems: 1" in output
-    result = runner.invoke(app, [str(a) for a in [*args, "--no-report"]])
-    assert "Using" not in result.output
-
-    # --components limits the search: the block alone does not measure the overlap
-    result = runner.invoke(app, [str(a) for a in [*args, "--components", "1"]])
-    assert result.exit_code == 0, result.output
-    assert "Instances with problems: 0" in result.output
-
-
-def testfind_report(tmp_path):
-    for name in ("model_compare.csv", "model_v2_compare.csv", "other_compare.csv"):
-        (tmp_path / name).write_text("")
-    assert find_report(tmp_path / "model.mcnp") == tmp_path / "model_compare.csv"
-    found = find_report(tmp_path / "model_materials.mcnp")
-    assert found == tmp_path / "model_compare.csv"
-    found = find_report(tmp_path / "model_v2_materials.mcnp")
-    assert found == tmp_path / "model_v2_compare.csv"
-    assert find_report(tmp_path / "modelx.mcnp") is None
+    # --components limits the search. The overlap is measured from the block when the
+    # bolt is not searched, and the other components have no problem
+    for selection, problems in (("1", 1), ("2,3", 0)):
+        command = [*args, "--components", selection]
+        result = runner.invoke(app, [str(a) for a in command])
+        assert result.exit_code == 0, result.output
+        assert f"Instances with problems: {problems}" in result.output

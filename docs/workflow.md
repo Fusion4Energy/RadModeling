@@ -19,8 +19,8 @@ Next to them, `machine_registry.csv` keeps the materials and the original volume
 
 After the conversion, each file is named after its input and the command that wrote
 it: GEOUNED names its output after the STEP file (`machine_export.mcnp`), then
-`compare` writes `machine_export_compare.csv` and `materials` writes
-`machine_export_materials.mcnp` next to it.
+`materials` writes `machine_export_materials.mcnp` and `atlas`
+`machine_export_materials_atlas.pdf` next to it.
 
 ## 1. Tag the original model
 
@@ -200,10 +200,9 @@ the instances of component 3 and instance 2 of component 7. This gives:
 Instances of the STEP file without tagged cells are reported with a 100 %
 discrepancy, and cell tags of instances that are not in the STEP file are listed.
 
-The full results are written to `machine_export_compare.csv` next to `machine_export.mcnp` (or to
-`-o`), where the atlas finds them. With `--components` no report is written
-unless `-o` is given: a partial report would hide the other instances from the
-atlas.
+The instances beyond the `max-discrepancy` setting and the overlapping pairs are
+printed; the MCNP volumes go into the registry. Nothing else is written: the atlas
+searches the instances again itself.
 
 ## 7. Assign the materials
 
@@ -286,18 +285,9 @@ their planes happen to cut. The PDF has:
   labelled (A, B, C) with the page of their zoom, which slices the same plane around
   them and names the overlapping cells or the instances CAD and MCNP disagree on.
 
-When `compare` has run on the same geometry, the atlas uses its report instead of
-searching every instance: only the instances it reports are searched again, to locate
-their problems. The report of `machine_export.mcnp` is `machine_export_compare.csv`, and it is also
-used for `machine_export_materials.mcnp` (any `machine_export_*.mcnp`), since `materials` changes no
-geometry. `--report` gives another one, `--no-report` searches every instance.
-
-!!! warning "The report must match the geometry"
-    The atlas does not check where the report comes from: it says which one it uses,
-    and you must make sure it was written by `compare` on the current geometry and
-    STEP file. After converting again or changing the CAD, run `compare` again (or
-    use `--no-report`): an outdated report makes the atlas search the wrong instances
-    and miss new problems.
+The atlas does not use the results of `compare`: it searches every instance itself
+(`--components` limits it), so it always matches the geometry it is given. This takes
+about as long as `compare`.
 
 Materials keep the same colour on every page. `--resolution` (400 pixels across by
 default, half that of `slice`) trades detail for time: every page classifies all its

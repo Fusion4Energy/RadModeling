@@ -61,6 +61,9 @@ keep all code in `radmodeling`.
 - CAD lengths in mm, MCNP in cm; registry volumes in cm3 (`MM_PER_CM` in compare).
 - CLI shape: MCNP input first, export STEP second; every written file has `-o` and a
   default named after the input; shared options are `Annotated` aliases in `cli.py`.
+  Options are ordered by importance (typer shows them in definition order): output
+  options first (`-o`, `-r`, `-l`), then the command's own, then `--components`,
+  `--points`, `--seed`, `--jobs` last, always in that order.
 - Per-user settings (`volume-tolerance`, `max-discrepancy`) are in `settings.py`, set
   with `radmod config` and read by the SpaceClaim tools too (path in the loaders).
   They are not command options as well: one place to set them.

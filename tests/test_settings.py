@@ -1,12 +1,10 @@
 import json
-import math
 
 import pytest
 from typer.testing import CliRunner
 
 from radmodeling import settings
 from radmodeling.cli import app
-from radmodeling.compare import VolumeComparison, read_problems, write_report
 from radmodeling.registry import Key, select_keys
 
 
@@ -54,22 +52,3 @@ def test_select_keys():
     assert select_keys(keys, "3, 7.2") == [Key(3, 1), Key(3, 2), Key(7, 2)]
     with pytest.raises(ValueError, match="invalid selection"):
         select_keys(keys, "3,a")
-
-
-def test_report_round_trip(tmp_path):
-    def result(key, cad_only, **values):
-        return VolumeComparison(key, [1], 100, 100, 0.1, cad_only, 0, False, **values)
-
-    results = [
-        result(Key(1), 0.5),
-        result(Key(2), 5),
-        result(Key(3), 0, overlaps={Key(1): (0.2, 0.01)}),
-        result(Key(4), 0, error="unknown surface 9"),
-    ]
-    report = tmp_path / "model_compare.csv"
-    write_report(results, report)
-    problems = read_problems(report, max_discrepancy=1)
-    assert [p.key for p in problems] == [Key(2), Key(3), Key(4)]
-    assert problems[1].note == "overlaps 1.1"
-    assert problems[2].note == "unknown surface 9"
-    assert math.isclose(problems[0].discrepancy_pct, 5)

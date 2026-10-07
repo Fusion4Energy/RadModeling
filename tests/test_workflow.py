@@ -1,4 +1,3 @@
-import csv
 import json
 import math
 import os
@@ -674,19 +673,19 @@ def test_cli_compare_reports_overlapping_pairs_once(tmp_path):
     run("export", step.with_name("machine_simplified.step"), "-o", exported)
     mcnp = tmp_path / "model.mcnp"
     mcnp.write_text(models.clash_mcnp_text())
-    report = tmp_path / "compare.csv"
     output = run(
         "compare", mcnp, exported, "--no-registry", "--points", "20000",
-        "--seed", "2", "-o", report,
+        "--seed", "2",
     )  # fmt: skip
     assert "2 instances agree" in output
     assert "1 overlapping pairs" in output
-    rows = list(csv.DictReader(report.open()))
-    overlaps = {row["component_id"]: row["overlaps"] for row in rows}
+    keys = sorted(workflow.exported_solids(exported))
+    comparison = workflow.load_comparison(mcnp, exported, keys, 20_000, 2)
+    overlaps = {k.id: comparison.compare(k).overlaps for k in keys}
     # Measured once, from the bolts: sampled more densely than the block
-    assert overlaps["4"].startswith("1.1:")
-    assert overlaps["1"] == overlaps["2"] == overlaps["3"] == ""
-    volume = float(overlaps["4"].partition(":")[2])
+    assert list(overlaps[4]) == [Key(1, 1)]
+    assert overlaps[1] == overlaps[2] == overlaps[3] == {}
+    volume, _ = overlaps[4][Key(1, 1)]
     assert volume == pytest.approx(math.pi * 0.5**2 * 2, rel=0.3)
 
 
@@ -704,16 +703,17 @@ def test_cli_compare_with_workers_gives_the_same_results(tmp_path):
     assert result.exit_code == 0, result.output
     mcnp = tmp_path / "model.mcnp"
     mcnp.write_text(models.clash_mcnp_text())
-    reports = []
+    registry = step.with_name("machine_registry.csv")
+    saved = []
     for jobs in (1, 2):
-        report = tmp_path / f"compare_{jobs}.csv"
-        args = ["compare", mcnp, exported, "--no-registry", "--points", "5000",
-                "--seed", "3", "-o", report, "--jobs", jobs]  # fmt: skip
+        args = ["compare", mcnp, exported, "--points", "5000", "--seed", "3",
+                "--jobs", jobs]  # fmt: skip
         result = runner.invoke(app, [str(a) for a in args])
         assert result.exit_code == 0, result.output
-        reports.append(report.read_text())
+        saved.append(registry.read_text())
     # Every instance has its own random points: the same in any worker
-    assert reports[0] == reports[1]
+    assert saved[0] == saved[1]
+    assert Registry.load(registry)[4, 1].mcnp_volume_cm3 is not None
 
 
 def test_cli_pipeline(tmp_path, cad_model, library_file):
