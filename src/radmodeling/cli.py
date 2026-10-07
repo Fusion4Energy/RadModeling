@@ -15,6 +15,8 @@ from rich.console import Console
 from rich.markup import escape as esc
 from rich.table import Table
 
+from radmodeling.registry import VOLUME_TOLERANCE_PCT
+
 if TYPE_CHECKING:
     from radmodeling.compare import Plane, SliceResult, VolumeComparison
     from radmodeling.slices import Scene
@@ -40,6 +42,15 @@ RegistryOption = Annotated[
 def _fail(message: str) -> NoReturn:
     console.print(f"[bold red]Error:[/] {esc(message)}")
     raise typer.Exit(1)
+
+
+ToleranceOption = Annotated[
+    float,
+    typer.Option(
+        help="Volume difference with the original allowed [%]. Use the same in "
+        "'check' and 'compare'."
+    ),
+]
 
 
 JOBS_OPTION = typer.Option(
@@ -189,9 +200,7 @@ def init(
 def check(
     simplified: Annotated[Path, typer.Argument(help="Simplified STEP model.")],
     registry: RegistryOption = None,
-    tolerance: Annotated[
-        float, typer.Option(help="Maximum volume difference allowed [%].")
-    ] = 1.0,
+    tolerance: ToleranceOption = VOLUME_TOLERANCE_PCT,
     highlight: Annotated[
         Path | None,
         typer.Option(
@@ -377,8 +386,8 @@ def materials(
     """Assign materials and densities (with DCF) to the tagged cells.
 
     The density correction factors are the registry's 'dcf' column: written by
-    'compare' (1 where the correction is below 0.1 % or three times its own
-    uncertainty) or edited by hand.
+    'compare' (1 where the MCNP volume is within the volume tolerance or three times
+    its uncertainty) or edited by hand.
     """
     from radmodeling.mcnp.geometry import read_model
     from radmodeling.mcnp.materials import (
@@ -386,7 +395,7 @@ def materials(
         MaterialLibrary,
         assign_materials,
     )
-    from radmodeling.registry import DCF_MIN, Registry
+    from radmodeling.registry import Registry
 
     output = output or mcnp.with_name(f"{mcnp.stem}_materials{mcnp.suffix}")
     registry = _registry(registry, [mcnp])
@@ -421,13 +430,22 @@ def materials(
         console.print(f"[yellow]Material cards to add to the input:[/] {esc(missing)}")
     if dcf:
         console.print(
-            f"Density correction factors applied: {len(report.dcf_applied)}; "
-            f"negligible, left at 1: {len(report.dcf_negligible)} (closer to 1 than "
-            f"{DCF_MIN:.1%} or three times their uncertainty)"
+            "Density correction factors (registry 'dcf'), instances:\n"
+            f"  {len(report.dcf_applied)} corrected to the CAD volume\n"
+            f"  {len(report.dcf_negligible)} not corrected: MCNP volume within the "
+            "volume tolerance or the uncertainty of 'compare' (DCF 1)"
         )
         if report.dcf_manual:
             keys = ", ".join(map(str, report.dcf_manual))
-            console.print(f"Density correction factors edited by hand: {keys}")
+            console.print(
+                f"  {len(report.dcf_manual)} edited by hand (neither 1 nor the volume "
+                f"ratio): {keys}"
+            )
+        if report.dcf_missing:
+            console.print(
+                f"  [yellow]{len(report.dcf_missing)} without factor, not corrected: "
+                "run 'compare' to compute them[/]"
+            )
     for key, value in report.dcf_out_of_range:
         console.print(f"[yellow]Component {key}: unusual DCF {value:.3f}[/]")
     console.print(f"[green]Written[/] {esc(str(output))}")
@@ -464,6 +482,7 @@ def compare(
     threshold: Annotated[
         float, typer.Option(help="Discrepancy reported as a problem [%].")
     ] = 1.0,
+    tolerance: ToleranceOption = VOLUME_TOLERANCE_PCT,
     seed: Annotated[int | None, typer.Option(help="Random seed.")] = None,
     jobs: Annotated[int, JOBS_OPTION] = 0,
 ) -> None:
@@ -570,20 +589,13 @@ def compare(
 
     if registry and not no_registry:
         reg = Registry.load(registry)
-        manual = [
-            r.key
-            for r in results
-            if r.key in reg
-            and not r.error
-            and reg[r.key].set_mcnp_volume(r.mcnp_volume_cm3, r.mcnp_volume_std_cm3)
-        ]
+        for r in results:
+            if r.key in reg and not r.error:
+                reg[r.key].set_mcnp_volume(
+                    r.mcnp_volume_cm3, r.mcnp_volume_std_cm3, tolerance
+                )
         reg.save(registry)
         console.print(f"MCNP volumes and DCFs saved in {esc(str(registry))}.")
-        if manual:
-            console.print(
-                "[yellow]DCFs edited by hand, kept (clear them to recompute):[/] "
-                + ", ".join(map(str, manual))
-            )
     if report is None and not components:
         report = mcnp.with_name(mcnp.stem + REPORT_SUFFIX)
     if report:

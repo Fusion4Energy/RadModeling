@@ -182,8 +182,10 @@ the instances of component 3 and instance 2 of component 7. This gives:
 
 * the **MCNP volume** of the component with its uncertainty. The estimate only depends
   on the points where CAD and MCNP disagree, so it is very precise when the conversion
-  is good. It goes into the registry with the density correction factor it gives
-  (`dcf`, see [Assign the materials](#7-assign-the-materials)).
+  is good. Its uncertainty is never below the volume of one sample point: with no
+  point where they disagree, the disagreement can still be that large. It goes into
+  the registry with the density correction factor it gives (`dcf`, see
+  [Assign the materials](#7-assign-the-materials)).
 * the **discrepancy**: the volume where CAD and MCNP disagree, relative to the CAD
   volume. Above the `--threshold` (1 % by default) the component is reported.
 * a warning when the cells reach the border of the sampled boxes, meaning they extend
@@ -213,22 +215,22 @@ the registry can be fixed in one go.
 
 The DCF applied is the `dcf` column of the registry, so what the registry shows is
 what goes into the input. `compare` writes it, and no other command changes it.
-Corrections that cannot be told apart from 1 are written as exactly 1: those closer
-to 1 than 0.1 % and those within three standard deviations of 1, from the
-uncertainty of the MCNP volume. Such corrections are below the
-accuracy of the comparison, and applying them would only change the densities in
-their last digits at every new `compare`. Larger corrections are always applied,
-however small: the volume removed when simplifying a component is real missing mass,
-usually in the same direction for all components, and it adds up. This is why
-components within the `check` tolerance can still get a DCF other than 1. The
-command reports how many corrections were applied and how many left at 1. Use
-`--no-dcf` to ignore the density correction factors altogether.
+It is 1 when the MCNP volume is within the volume tolerance of the original one
+(`compare --tolerance`, 1 % by default, as in `check`), or within three standard
+deviations of it. The tolerance is the volume difference already accepted when
+simplifying: correcting it in the densities would contradict `check`, and it does not
+add up, as the mass of the whole model is then also within the tolerance. Beyond it,
+the DCF is the full ratio of the original volume to the MCNP one: this catches the
+components accepted beyond the tolerance in `check`, and those the conversion moved
+beyond it. The uncertainty keeps a DCF from correcting the noise of a `compare` with
+too few points. The command counts the instances corrected, those not corrected (DCF of 1), those whose
+DCF was edited by hand and those without DCF (not compared yet). Use `--no-dcf` to
+ignore the density correction factors altogether.
 
 A `dcf` can be edited by hand, for instance to 1 for a component whose MCNP volume is
-not trusted. A new `compare` keeps a factor that differs from the one its volumes
-give, and lists it; empty the cell to have it computed again. A hand-written value
-equal to the computed one cannot be told apart from it, and is updated like any
-other. `materials` lists the factors edited by hand. To give a component its real
+not trusted. A new `compare` overwrites every factor with the one its volumes give,
+so edit them after the last `compare`. `materials` lists the factors that are neither 1 nor
+the volume ratio (a factor set to 1 by hand cannot be told apart from one left at 1). To give a component its real
 mass, set `mass_g` instead: the DCF then brings the mass of its cells to that value.
 
 The material library is a TOML file:

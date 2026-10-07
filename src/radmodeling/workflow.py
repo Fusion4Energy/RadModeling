@@ -38,6 +38,7 @@ from radmodeling.mcnp.geometry import Geometry
 from radmodeling.mcnp.tags import cells_by_instance
 from radmodeling.registry import (
     TAG_RE,
+    VOLUME_TOLERANCE_PCT,
     Component,
     Key,
     Registry,
@@ -395,7 +396,7 @@ class CheckResult:
 def check(
     simplified_step: str | os.PathLike,
     registry: Registry,
-    tolerance_pct: float = 1.0,
+    tolerance_pct: float = VOLUME_TOLERANCE_PCT,
     analyse_geometry: bool = True,
 ) -> CheckResult:
     """Match a simplified model with the registry and update the simplified volumes.

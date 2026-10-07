@@ -8,7 +8,7 @@ import migjorn
 import models
 import numpy as np
 import pytest
-from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox, BRepPrimAPI_MakeSphere
 from OCP.gp import gp_Pnt
 
 from radmodeling import workflow
@@ -393,19 +393,22 @@ def test_assign_materials_void(library_file):
 
 
 @pytest.mark.parametrize(
-    ("mcnp_volume", "std", "applied"),
+    ("mcnp_volume", "std", "tolerance", "applied"),
     [
-        (49.0, None, True),  # 2 %
-        (49.97, None, False),  # 0.06 %, below the 0.1 % minimum
-        (49.0, 0.4, False),  # 2 % but within three standard deviations (2.4 %)
-        (49.0, 0.1, True),  # 2 % and well beyond its uncertainty
+        (49.0, None, 1, True),  # 2 %
+        (49.6, None, 1, False),  # 0.8 %, within the volume tolerance
+        (49.6, None, 0.5, True),  # beyond a tighter tolerance
+        (49.0, 0.4, 1, False),  # 2 % but within three standard deviations (2.4 %)
+        (49.0, 0.1, 1, True),  # 2 % and well beyond its uncertainty
     ],
 )
-def test_negligible_dcf_are_not_applied(library_file, mcnp_volume, std, applied):
+def test_negligible_dcf_are_not_applied(
+    library_file, mcnp_volume, std, tolerance, applied
+):
     registry = make_registry()
     ball = registry[3, 1]
     # The registry shows the factor that is applied, not the raw volume ratio
-    assert not ball.set_mcnp_volume(mcnp_volume, std or 0.0)
+    ball.set_mcnp_volume(mcnp_volume, std or 0.0, tolerance)
     assert ball.dcf == pytest.approx(50 / mcnp_volume if applied else 1)
     model = migjorn.parse(models.mcnp_text())
     report = assign_materials(model, registry, MaterialLibrary.load(library_file))
@@ -415,40 +418,47 @@ def test_negligible_dcf_are_not_applied(library_file, mcnp_volume, std, applied)
     assert ((3, 1) in report.dcf_negligible) != applied
     assert report.dcf_applied[:1] == [(2, 1)]  # the pipe: 4.7 %
     assert report.dcf_manual == []
+    assert report.dcf_missing == [(1, 1)]  # the only one without MCNP volume
 
 
-def test_manual_dcf_is_kept(library_file, tmp_path):
+def test_manual_dcf_is_applied_until_compare(library_file, tmp_path):
     registry = make_registry()
     ball = registry[3, 1]
-    assert not ball.set_mcnp_volume(49.0, 0.1)
-    ball.dcf = 1.0  # by hand: the MCNP volume is not trusted
+    ball.set_mcnp_volume(49.0, 0.1)
+    ball.dcf = 1.01  # by hand
 
-    # Saving and loading do not recompute it, a new 'compare' keeps it
+    # Saving and loading do not recompute it, 'materials' applies and lists it
     path = tmp_path / "registry.csv"
     registry.save(path)
     registry = Registry.load(path)
     ball = registry[3, 1]
-    assert ball.dcf == 1.0 and ball.manual_dcf
-    assert ball.set_mcnp_volume(48.0, 0.1)
-    assert ball.dcf == 1.0 and ball.mcnp_volume_cm3 == 48.0
+    assert ball.dcf == 1.01 and ball.manual_dcf
 
     model = migjorn.parse(models.mcnp_text())
     report = assign_materials(model, registry, MaterialLibrary.load(library_file))
-    assert cell(model, 3).density == pytest.approx(-20)
+    assert cell(model, 3).density == pytest.approx(-20.2)
     assert report.dcf_manual == [(3, 1)]
 
-    # Cleared, the next 'compare' writes the computed one again
-    ball.dcf = None
-    assert not ball.set_mcnp_volume(48.0, 0.1)
+    # A new 'compare' overwrites it
+    ball.set_mcnp_volume(48.0, 0.1)
     assert ball.dcf == pytest.approx(50 / 48) and not ball.manual_dcf
+
+
+@pytest.mark.parametrize("mcnp_volume", [70.37037, 69.3])  # left at 1, applied
+def test_dcf_from_compare_is_not_manual_after_saving(tmp_path, mcnp_volume):
+    # Whatever the tolerance, and with the volumes rounded to the 6 digits saved
+    registry = make_registry()
+    registry[3, 1].original_volume_cm3 = 70.3
+    registry[3, 1].set_mcnp_volume(mcnp_volume, 0.0, tolerance_pct=5)
+    path = tmp_path / "registry.csv"
+    registry.save(path)
+    assert not Registry.load(path)[3, 1].manual_dcf
 
 
 def test_dcf_without_mcnp_volume_is_manual():
     ball = make_registry()[3, 1]
     ball.dcf = 1.1
     assert ball.manual_dcf
-    assert ball.set_mcnp_volume(49.0, 0.1)
-    assert ball.dcf == 1.1
 
 
 def test_material_library_rejects_unknown_keys(tmp_path):
@@ -502,6 +512,20 @@ def test_compare_component(radius, matches):
     )
     assert (result.discrepancy_pct < 1) == matches
     assert not result.touches_sampling_box
+
+
+def test_compare_uncertainty_is_not_below_one_point():
+    """A box converts exactly: no point disagrees, yet the uncertainty is not 0."""
+    text = models.mcnp_text().replace("1 -2 3 -4 5 -6 7 ", "1 -2 3 -4 5 -6   ")
+    box = BRepPrimAPI_MakeBox(100, 100, 50).Shape()
+    result = compare_component(
+        Key(1), [box], [1], Geometry(migjorn.parse(text)), n_points=10_000,
+        rng=np.random.default_rng(5),
+    )  # fmt: skip
+    assert result.cad_only_cm3 == result.mcnp_only_cm3 == 0
+    assert result.mcnp_volume_cm3 == pytest.approx(500)
+    # One point: the sampling box (padded, a bit larger than the box) / points
+    assert 500 / 10_000 < result.mcnp_volume_std_cm3 < 2 * 500 / 10_000
 
 
 TWO_RODS = """Two rods 0.5 mm apart, so that their sampling boxes overlap

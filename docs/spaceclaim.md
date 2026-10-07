@@ -129,4 +129,6 @@ reads and a value. Without the parameter, the tool uses its default.
 | `PointRadius`      | *Load points*: sphere radius                                         | 20 mm   |
 
 `VolumeTolerance` only reaches `radmod check` through *Check model*: run from a
-terminal, `radmod check` takes `--tolerance` (1 % by default).
+terminal, `radmod check` takes `--tolerance` (1 % by default). Pass the same value to
+`radmod compare --tolerance`, which leaves the density correction factors within it
+at 1.

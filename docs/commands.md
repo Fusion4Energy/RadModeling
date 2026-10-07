@@ -67,7 +67,9 @@ most 8, by default). Each worker reads the STEP file and the MCNP input itself a
 keeps its own copy in memory: lower `--jobs` for very large models.
 
 The MCNP volumes go into the registry with the density correction factors they give
-(`dcf`), except the factors edited by hand, which are kept and listed.
+(`dcf`): 1 within `--tolerance` (1 % by default, as in `check`) or three standard
+deviations of the original volume, else original / MCNP volume. All the factors are
+recomputed, including those edited by hand.
 
 ### materials
 

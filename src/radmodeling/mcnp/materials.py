@@ -77,9 +77,11 @@ class AssignmentReport:
     mass_per_material_g: dict[str, float] = field(default_factory=dict)
     missing_cards: list[int] = field(default_factory=list)  # used, not in the input
     dcf_out_of_range: list[tuple[Key, float]] = field(default_factory=list)
-    dcf_applied: list[Key] = field(default_factory=list)
-    dcf_negligible: list[Key] = field(default_factory=list)
+    # Each instance with a material is in one of these, by its registry 'dcf':
+    dcf_applied: list[Key] = field(default_factory=list)  # the volume ratio
+    dcf_negligible: list[Key] = field(default_factory=list)  # 1
     dcf_manual: list[Key] = field(default_factory=list)  # edited by hand
+    dcf_missing: list[Key] = field(default_factory=list)  # empty: no 'compare'
     void_components: int = 0
 
 
@@ -101,7 +103,7 @@ def assign_materials(
     :mod:`radmodeling.mcnp.tags`).
 
     The density is multiplied by the registry's ``dcf``, as written by 'compare'
-    (1 where it cannot be told apart from 1) or edited by hand.
+    (1 within the volume tolerance) or edited by hand.
 
     Every problem found (unknown components, missing materials or densities) is
     collected and raised together in a single :class:`AssignmentError`, so that the
@@ -159,13 +161,15 @@ def assign_materials(
             continue
 
         dcf = 1.0
-        if use_dcf and component.dcf is not None:
+        if use_dcf and component.dcf is None:
+            report.dcf_missing.append(key)
+        elif use_dcf and component.dcf is not None:
             dcf = component.dcf
             if not dcf_range[0] <= dcf <= dcf_range[1]:
                 report.dcf_out_of_range.append((key, dcf))
             if component.manual_dcf:
                 report.dcf_manual.append(key)
-            if dcf == 1.0:
+            elif dcf == 1.0:
                 report.dcf_negligible.append(key)
             else:
                 report.dcf_applied.append(key)

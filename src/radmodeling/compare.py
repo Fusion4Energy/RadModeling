@@ -254,6 +254,10 @@ def compare_component(
         return estimate, float(box_volumes**2 @ (variance / n))
 
     difference, variance = integral(mcnp_only.astype(float) - cad_only)
+    # Not below the volume of one point: with no point (or very few) where CAD and
+    # MCNP disagree, the sample variance is 0 but the disagreement can be that large
+    point_volume = integral(np.ones(t.shape))[0] / t.size
+    std = max(math.sqrt(variance), point_volume)
     overlaps = {}
     for other, mask in sorted(shared.items()):
         volume, overlap_variance = integral(mask.reshape(t.shape).astype(float))
@@ -289,7 +293,7 @@ def compare_component(
         cells=cells,
         cad_volume_cm3=cad_volume,
         mcnp_volume_cm3=cad_volume + difference,
-        mcnp_volume_std_cm3=float(np.sqrt(variance)),
+        mcnp_volume_std_cm3=std,
         cad_only_cm3=integral(cad_only.astype(float))[0],
         mcnp_only_cm3=integral(mcnp_only.astype(float))[0],
         touches_sampling_box=bool(np.any(in_cell & on_faces & (weight == 1))),
