@@ -43,7 +43,6 @@ class Spot:
 
     kind: str  # "overlap" or "mismatch" (CAD and MCNP disagree)
     other: Key | None  # the overlapping instance (the instance itself: its own cells)
-    point: np.ndarray  # a sample point of the problem, near the centre of the cluster
     lo: np.ndarray  # box of the cluster
     hi: np.ndarray
     volume_cm3: float
@@ -480,14 +479,10 @@ def _spots(
         if totals[label] < min_fraction * totals.max():
             break
         members = points[labels == label]
-        weights = volumes[labels == label]
-        centre = weights @ members / weights.sum()
-        point = members[np.argmin(np.linalg.norm(members - centre, axis=1))]
         spots.append(
             Spot(
                 kind,
                 other,
-                point,
                 members.min(axis=0),
                 members.max(axis=0),
                 float(totals[label]),

@@ -639,7 +639,6 @@ def test_compare_locates_the_overlap():
     assert len(spots) == 1  # one lens, between x = 0.3 and 0.5 cm, 2 cm tall
     spot = spots[0]
     assert spot.other == Key(2)
-    assert 0.3 <= spot.point[0] <= 0.5
     assert spot.lo[0] >= 0.3 - 1e-9 and spot.hi[0] <= 0.5 + 1e-9
     assert spot.hi[2] - spot.lo[2] > 1.5
     assert spot.volume_cm3 == pytest.approx(result.overlaps[Key(2)][0])

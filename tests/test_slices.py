@@ -17,13 +17,17 @@ from radmodeling.compare import (
 from radmodeling.plot import slice_figure
 from radmodeling.registry import Key
 from radmodeling.slices import (
+    Atlas,
     instance_plane,
     load_scene,
     make_slice,
     overview_planes,
     parse_plane_counts,
     plane_shows,
+    problem_pages,
+    scene_comparison,
     spot_plane,
+    thinnest_axis,
     zoom_slices,
 )
 
@@ -125,16 +129,46 @@ def test_cluster_labels():
 
 
 def test_spot_planes():
-    spot = Spot("overlap", Key(2), np.array([1.0, 2.0, 3.0]), np.array([0.0, 0, 2]),
-                np.array([2.0, 4, 3.5]), 1.0)  # fmt: skip
+    spot = Spot("overlap", Key(2), np.array([0.0, 0, 2]), np.array([2.0, 4, 3.5]), 1.0)
     plane = spot_plane(spot, context=1.0)
-    # Normal to the thinnest side of the spot, through the spot point
+    # Normal to the thinnest side of the spot, through its middle
     assert plane.normal == pytest.approx([0, 0, 1])
-    assert plane.origin == pytest.approx([1, 2, 3])
+    assert plane.origin == pytest.approx([1, 2, 2.75])
     assert (plane.width, plane.height) == pytest.approx((4, 6))
     assert plane_shows(plane, spot)
     elsewhere = Plane.from_basis([1, 2, 10], "z", 4, 6)
     assert not plane_shows(elsewhere, spot)
+
+
+def test_thinnest_axis_breaks_near_ties_in_a_fixed_order():
+    assert thinnest_axis(np.array([1.0, 4, 3])) == "x"
+    # A round cluster: noise must not decide the axis
+    assert thinnest_axis(np.array([5.16, 5.14, 5.17])) == "z"
+    assert thinnest_axis(np.array([5.0, 5.1, 9])) == "y"
+    assert thinnest_axis(np.array([0.0, 0, 2])) == "y"
+
+
+def test_mismatch_shell_is_sliced_through_its_middle(tmp_path, cad_model):
+    """A part slightly too large everywhere has a hollow shell of problem points:
+    its slice must cut the middle of the part for any seed, not graze it."""
+    runner = CliRunner()
+    assert runner.invoke(app, ["init", str(cad_model)]).exit_code == 0
+    exported = tmp_path / "export.step"
+    simplified = cad_model.with_name("machine_simplified.step")
+    result = runner.invoke(app, ["export", str(simplified), "-o", str(exported)])
+    assert result.exit_code == 0, result.output
+    mcnp = tmp_path / "model.mcnp"
+    mcnp.write_text(models.mcnp_text(ball_radius=2.6))  # ball: centre (5, 5, 10)
+    scene = load_scene(mcnp, exported)
+    for seed in range(6):
+        work = Atlas(scene, scene_comparison(scene, [Key(3)], 20_000, seed), 80)
+        pages, n_problems = problem_pages(scene, [work.search(Key(3))], 1.0, 20)
+        assert n_problems == 1
+        assert len(pages) == 1
+        plane = pages[0][1]
+        assert plane.origin == pytest.approx([5, 5, 10], abs=0.2)
+        assert plane.normal == pytest.approx([0, 0, 1])
+        assert not work.draw(pages[0]).zooms  # the whole ring is visible
 
 
 @pytest.fixture

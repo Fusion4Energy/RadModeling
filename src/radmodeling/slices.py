@@ -380,16 +380,27 @@ def plane_shows(plane: Plane, spot: Spot) -> bool:
     return bool(crosses and inside)
 
 
+def thinnest_axis(size: np.ndarray, tie: float = 0.2) -> str:
+    """The axis along which a box is thinnest. Sizes within ``tie`` of the smallest
+    count as equal and z, then y, then x is chosen: the sizes of sampled clusters are
+    noisy, and a round cluster must not be sliced along x or y at random."""
+    thin = size <= size.min() * (1 + tie)
+    return next(axis for axis in reversed(AXES) if thin[AXES.index(axis)])
+
+
 def spot_plane(spot: Spot, context: float) -> Plane:
-    """Plane through a problem spot, normal to its thinnest direction, showing the
-    spot with ``context`` cm around it."""
+    """Plane through the middle of a problem spot, normal to its thinnest direction,
+    showing the spot with ``context`` cm around it.
+
+    A connected cluster has no gap along any axis, so the plane always cuts it; for
+    the hollow shell around a part slightly too large or too small, the middle is
+    its largest section.
+    """
     size = spot.hi - spot.lo
-    axis = AXES[int(np.argmin(size))]
+    axis = thinnest_axis(size)
     others = [i for i in range(3) if i != AXES.index(axis)]
-    origin = (spot.lo + spot.hi) / 2
-    origin[AXES.index(axis)] = spot.point[AXES.index(axis)]
     width, height = (size[i] + 2 * context for i in others)
-    return Plane.from_basis(origin, axis, width, height)
+    return Plane.from_basis((spot.lo + spot.hi) / 2, axis, width, height)
 
 
 def axis_plane(
@@ -436,7 +447,7 @@ def instance_plane(solids: Sequence[TopoDS_Shape], margin: float = 0.25) -> Plan
     """Plane through the centre of some solids, normal to their thinnest direction,
     which shows their largest section, with some surroundings around them."""
     lo, hi = solids_bounds_cm(solids)
-    axis = AXES[int(np.argmin(hi - lo))]
+    axis = thinnest_axis(hi - lo)
     size = hi - lo
     pad = np.maximum(size * margin, 0.05 * size.max())
     return axis_plane(
