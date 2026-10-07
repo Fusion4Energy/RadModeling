@@ -899,3 +899,48 @@ def test_check_warns_when_the_document_is_newer(tmp_path):
 
     os.utime(simplified, (saved + 20, saved + 20))
     assert "Warning" not in run("check", simplified)
+
+
+def test_every_import_is_a_declared_dependency():
+    """Packages installed only by chance in the development environment (click, once
+    a dependency of typer) break clean installs: every import must be stdlib, the
+    package itself or a dependency of pyproject.toml. The SpaceClaim scripts run in
+    IronPython and are not checked."""
+    import ast
+    import re
+    import sys
+    from importlib.metadata import packages_distributions
+
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # Python < 3.11
+        import tomli as tomllib
+
+    root = Path(__file__).parents[1]
+    project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
+
+    def normal(name: str) -> str:
+        return re.sub(r"[-_.]+", "-", name).lower()
+
+    declared = {normal(re.split(r"[ ;<>=!~\[]", d)[0]) for d in project["dependencies"]}
+    distributions = packages_distributions()
+    package = root / "src" / "radmodeling"
+    undeclared = set()
+    for path in package.rglob("*.py"):
+        if "spaceclaim" in path.parts:
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and not node.level:
+                names = [node.module or ""]
+            else:
+                continue
+            for name in names:
+                top = name.partition(".")[0]
+                if top in sys.stdlib_module_names or top in ("radmodeling", "tomli"):
+                    continue
+                provided = {normal(d) for d in distributions.get(top, [])}
+                if not provided & declared:
+                    undeclared.add(f"{top} ({path.relative_to(root)})")
+    assert not undeclared

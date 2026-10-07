@@ -8,10 +8,9 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
-
-import click
 
 from radmodeling.registry import VOLUME_TOLERANCE_PCT
 
@@ -42,7 +41,17 @@ def path() -> Path:
     """The settings file (it may not exist yet)."""
     if given := os.environ.get(ENVIRONMENT):
         return Path(given)
-    return Path(click.get_app_dir("radmodeling")) / "settings.json"
+    return _user_folder() / "radmodeling" / "settings.json"
+
+
+def _user_folder() -> Path:
+    """The folder of the user's application settings: roaming AppData on Windows,
+    Application Support on macOS, XDG_CONFIG_HOME (~/.config) elsewhere."""
+    if sys.platform == "win32" and (appdata := os.environ.get("APPDATA")):
+        return Path(appdata)
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support"
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
 
 
 def stored() -> dict[str, float]:
