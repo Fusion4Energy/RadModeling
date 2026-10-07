@@ -4,9 +4,10 @@ icon: lucide/mouse-pointer-click
 
 # SpaceClaim tools
 
-SpaceClaim is only needed for the interactive simplification. The tools below help
-during that step. They read the registry written by `radmod` and colour, hide or
-extrude things; all the rest of the logic lives in the Python package.
+SpaceClaim is only needed for the interactive simplification and for drawing mesh
+tallies. The tools below help during those steps. They read the registry written by
+`radmod`, colour, hide or extrude things, or run `radmod` on the document; all the
+rest of the logic lives in the Python package.
 
 ## Setting them up (once)
 
@@ -114,6 +115,17 @@ Draws the points of a CSV file (x, y, z in cm) as spheres of radius `PointRadius
 (20 mm by default), for instance the lost particles found by
 [F4Enix](https://github.com/Fusion4Energy/F4Enix).
 
+### Fmesh
+
+Draw a box (any orientation) where each mesh tally should be, select the boxes (or
+any of their faces) and run it: the FMESH cards are written to `<name>_fmesh.txt` next
+to the document (save it first), replacing the previous file. Each card comes after a comment with
+the name of its box. Tally numbers start at 14 and go up by 10; rotated boxes get a TR
+card for the mesh, numbered from 900. The voxels are at most `FmeshVoxelSize` cm (5 by
+default) along each axis, and the message lists how many each mesh has. The tally
+numbers, particle (`n`) and voxels are meant to be edited in the file. Selected bodies
+that are not boxes are skipped.
+
 ## Parameters
 
 The tolerances and limits are constants at the top of each script in
@@ -127,6 +139,7 @@ reads and a value. Without the parameter, the tool uses its default.
 | `ElbowMaxAngle`    | *Replace elbows*: maximum turn per segment                           | 22.5°   |
 | `ElbowMinSegments` | *Replace elbows*: minimum segments per bend                          | 2       |
 | `PointRadius`      | *Load points*: sphere radius                                         | 20 mm   |
+| `FmeshVoxelSize`   | *Fmesh*: maximum voxel size                                          | 5 cm    |
 
 `VolumeTolerance` only reaches `radmod check` through *Check model*: run from a
 terminal, `radmod check` takes `--tolerance` (1 % by default). Pass the same value to

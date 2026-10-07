@@ -82,7 +82,7 @@ machine_export.mcnp ──radmod compare───▶ CAD vs MCNP volumes, densit
 
     ---
 
-    FMESH cards from boxes drawn in CAD and, in SpaceClaim, toroidal elbows to mitred
+    In SpaceClaim: FMESH cards from the selected boxes, toroidal elbows to mitred
     cylinders.
 
 -   :lucide-refresh-cw: **SpaceClaim tools published once**

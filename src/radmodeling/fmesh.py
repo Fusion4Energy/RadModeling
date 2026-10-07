@@ -1,7 +1,8 @@
 """FMESH tally cards from boxes drawn in CAD.
 
-Draw a box (any orientation) where the mesh tally should be and export it as STEP; the
-box faces define the mesh. Rotated boxes get a TR card for the mesh.
+Draw a box (any orientation) where the mesh tally should be and run the SpaceClaim
+*Fmesh* tool on it; the box faces define the mesh. Rotated boxes get a TR card for the
+mesh.
 """
 
 from __future__ import annotations
@@ -22,6 +23,8 @@ from radmodeling.cad.occ import explore, faces, volume_mm3
 MM_PER_CM = 10.0
 MAX_TRANSFORM = 999
 LINE_LENGTH = 80  # MCNP 6.1 and older; 6.2 allows 128
+FIRST_TALLY = 14
+FIRST_TRANSFORM = 900
 
 
 @dataclass
@@ -108,7 +111,7 @@ def fmesh_card(
     if bins is None:
         if size is None:
             raise ValueError("Give the voxel size or the number of bins")
-        counts = [max(1, math.ceil(length / size - 1e-9)) for length in box.lengths]
+        counts = voxel_counts(box, size)
     else:
         counts = list(bins)
 
@@ -128,6 +131,11 @@ def fmesh_card(
         for row in box.axes:
             lines.append("     " + " ".join(f"{v + 0.0:.9g}" for v in row))
     return "\n".join(lines) + "\n"
+
+
+def voxel_counts(box: MeshBox, size: float) -> list[int]:
+    """Voxels per axis so that none is larger than ``size`` cm."""
+    return [max(1, math.ceil(length / size - 1e-9)) for length in box.lengths]
 
 
 def comment_line(text: str) -> str:

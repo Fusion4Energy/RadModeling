@@ -136,12 +136,6 @@ def _warn_if_stale(step: Path) -> None:
         )
 
 
-def _ids(text: str | None) -> list[int] | None:
-    if not text:
-        return None
-    return [int(t) for t in text.replace(",", " ").split()]
-
-
 def _keys_text(keys) -> str:
     return ", ".join(map(str, keys))
 
@@ -954,49 +948,54 @@ def atlas(
 # --- geometry tools ------------------------------------------------------------------
 
 
-@app.command()
+@app.command(hidden=True)
 def fmesh(
     step: Annotated[Path, typer.Argument(help="STEP with one box per mesh tally.")],
-    size: Annotated[float | None, typer.Option(help="Voxel size [cm].")] = None,
-    bins: Annotated[
-        str | None, typer.Option(help="Voxels per axis instead, e.g. '10,10,5'.")
-    ] = None,
-    tally: Annotated[int, typer.Option(help="Number of the first tally.")] = 14,
-    particle: Annotated[str, typer.Option(help="Particle designator.")] = "n",
-    transform: Annotated[
-        int, typer.Option(help="Number of the first TR card for rotated boxes.")
-    ] = 900,
+    output: Annotated[Path, typer.Option(help="File for the FMESH cards.")],
+    size: Annotated[float, typer.Option(help="Voxel size [cm].")],
 ) -> None:
-    """Print FMESH cards for the boxes of a STEP file (any orientation)."""
-    from radmodeling.cad.step import read_step
-    from radmodeling.fmesh import box_from_solid, comment_line, fmesh_card
+    """Write FMESH cards for the boxes of a STEP file (any orientation).
 
-    if (size is None) == (bins is None):
-        _fail("give either --size or --bins")
-    counts = _ids(bins)
-    if counts is not None and len(counts) != 3:
-        _fail("--bins needs three values")
-    # The cards go to stdout, ready to redirect into an input; messages to stderr
-    messages = Console(stderr=True)
-    number, tr = tally, transform
-    for part in read_step(step):
-        for solid in part.solids:
+    Run by the SpaceClaim Fmesh tool on the selected bodies: tally numbers, particle
+    and voxels are meant to be edited in the written cards.
+    """
+    from radmodeling.cad.step import read_step
+    from radmodeling.fmesh import (
+        FIRST_TALLY,
+        FIRST_TRANSFORM,
+        box_from_solid,
+        comment_line,
+        fmesh_card,
+        voxel_counts,
+    )
+
+    if size <= 0:
+        _fail("the voxel size must be positive")
+    cards = []
+    number, tr = FIRST_TALLY, FIRST_TRANSFORM
+    # SpaceClaim names the solids after the bodies: a few boxes, so reading is fast
+    for part in read_step(step, body_names=lambda _: True):
+        for k, solid in enumerate(part.solids):
+            name = part.body_names[k] if k < len(part.body_names) else ""
+            name = name or part.name
             try:
                 box = box_from_solid(solid)
+                card = fmesh_card(box, number, size=size, transform=tr)
             except ValueError as exc:
-                messages.print(f"[yellow]Skipping {esc(part.name)}: {esc(str(exc))}[/]")
+                console.print(f"[yellow]Skipping {esc(name)}:[/] {esc(str(exc))}")
                 continue
-            try:
-                card = fmesh_card(
-                    box, number, particle, size, tuple(counts) if counts else None, tr
-                )
-            except ValueError as exc:
-                messages.print(f"[bold red]Error:[/] {esc(str(exc))}")
-                raise typer.Exit(1) from None
-            print(comment_line(part.name))
-            print(card, end="")
+            cards.append(comment_line(name) + "\n" + card)
+            counts = voxel_counts(box, size)
+            console.print(
+                f"FMESH{number} {esc(name)}: {' x '.join(map(str, counts))} = "
+                f"{math.prod(counts)} voxels"
+            )
             number += 10
             tr += 0 if box.axis_aligned else 1
+    if not cards:
+        _fail("no boxes found")
+    output.write_text("".join(cards), encoding="utf-8")
+    console.print(f"Cards written to {esc(str(output))}")
 
 
 # --- SpaceClaim ----------------------------------------------------------------------

@@ -109,20 +109,6 @@ found: only the instances it reports are searched. It must come from the current
 geometry and STEP file; `--no-report` searches every instance. The instances are
 searched and the slices classified in parallel, like `compare` (`--jobs`).
 
-## Geometry tools
-
-### fmesh
-
-```bash
-radmod fmesh BOXES.step --size 5
-```
-
-Prints an FMESH card for each box of the STEP file. Boxes can have any orientation:
-rotated boxes get a TR card. `--bins 10,10,4` sets the number of voxels instead of
-their size; `--tally` and `--transform` set the first tally and TR numbers. Solids
-that are not boxes are skipped with a warning on stderr, so `> meshes.i` collects
-only the cards.
-
 ## SpaceClaim
 
 ### spaceclaim-loaders

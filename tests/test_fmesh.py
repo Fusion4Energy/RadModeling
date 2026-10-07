@@ -93,35 +93,42 @@ def test_comment_line():
     assert len(comment_line("x" * 200)) == 80
 
 
-def test_cli_fmesh(tmp_path):
-    from typer.testing import CliRunner
-
-    from radmodeling.cad.step import Part, write_step
-    from radmodeling.cli import app
-
-    path = tmp_path / "boxes.step"
-    write_step([Part("Mesh", (), BRepPrimAPI_MakeBox(100, 100, 100).Shape())], path)
-    result = CliRunner().invoke(app, ["fmesh", str(path), "--bins", "2,2,2"])
-    assert result.exit_code == 0, result.output
-    assert "FMESH14:n GEOM=XYZ" in result.output
-    assert "IMESH=10 IINTS=2" in result.output
-
-
-def test_cli_fmesh_messages_stay_out_of_the_cards(tmp_path):
+def test_cli_fmesh_writes_the_cards_of_the_boxes(tmp_path):
     from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
     from typer.testing import CliRunner
 
     from radmodeling.cad.step import Part, write_step
     from radmodeling.cli import app
 
-    path = tmp_path / "boxes.step"
+    path, cards = tmp_path / "boxes.step", tmp_path / "boxes_fmesh.txt"
     parts = [
         Part("Mesh", (), BRepPrimAPI_MakeBox(100, 100, 100).Shape()),
         Part("Pipe", (), BRepPrimAPI_MakeCylinder(10, 100).Shape()),
+        Part("Fine", (), BRepPrimAPI_MakeBox(10, 20, 30).Shape()),
     ]
     write_step(parts, path)
-    result = CliRunner().invoke(app, ["fmesh", str(path), "--size", "5"])
+    args = ["fmesh", str(path), "--output", str(cards), "--size", "5"]
+    result = CliRunner().invoke(app, args)
     assert result.exit_code == 0, result.output
-    assert "Skipping Pipe" in result.stderr
-    assert "Pipe" not in result.stdout
-    assert result.stdout.startswith("c Mesh\nFMESH14:n GEOM=XYZ\n")
+    assert "Skipping Pipe" in result.output
+    assert "FMESH14 Mesh: 2 x 2 x 2 = 8 voxels" in result.output
+    text = cards.read_text()
+    assert text.startswith("c Mesh\nFMESH14:n GEOM=XYZ\n")
+    assert "c Fine\nFMESH24:n" in text
+    assert "Pipe" not in text
+
+
+def test_cli_fmesh_fails_without_boxes(tmp_path):
+    from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+    from typer.testing import CliRunner
+
+    from radmodeling.cad.step import Part, write_step
+    from radmodeling.cli import app
+
+    path, cards = tmp_path / "boxes.step", tmp_path / "boxes_fmesh.txt"
+    write_step([Part("Pipe", (), BRepPrimAPI_MakeCylinder(10, 100).Shape())], path)
+    args = ["fmesh", str(path), "--output", str(cards), "--size", "5"]
+    result = CliRunner().invoke(app, args)
+    assert result.exit_code == 1
+    assert "no boxes found" in result.output
+    assert not cards.exists()
