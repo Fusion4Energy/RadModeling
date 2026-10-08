@@ -27,12 +27,23 @@ def test_axis_aligned_box():
     )
 
 
-def test_rotated_box_gets_a_transformation():
-    placement = gp_Ax2(gp_Pnt(10, 20, 30), gp_Dir(0, 0, 1), gp_Dir(1, 1, 0))
+@pytest.mark.parametrize(
+    "direction",
+    [
+        ((0, 0, 1), (1, 1, 0)),  # about z only
+        ((1, 2, 3), (3, -1, -1 / 3)),  # about no main axis: checked against MCNP
+    ],
+)
+def test_rotated_box_gets_a_transformation(direction):
+    placement = gp_Ax2(
+        gp_Pnt(100, 200, 300), gp_Dir(*direction[0]), gp_Dir(*direction[1])
+    )
     solid = solids(BRepPrimAPI_MakeBox(placement, 100, 50, 20).Shape())[0]
     box = box_from_solid(solid)
     assert not box.axis_aligned
     assert sorted(box.lengths) == pytest.approx([2, 5, 10])
+    assert box.axes @ box.axes.T == pytest.approx(np.eye(3), abs=1e-12)
+    assert np.linalg.det(box.axes) == pytest.approx(1)
     card = fmesh_card(box, bins=(10, 5, 2), transform=7)
     assert "TR=7" in card
     tr_line = card[card.index("TR7") :].split()[1:]
@@ -44,6 +55,20 @@ def test_rotated_box_gets_a_transformation():
     local = transform.to_auxiliary(vertices / 10)
     assert local.min(axis=0) == pytest.approx([0, 0, 0], abs=1e-6)
     assert local.max(axis=0) == pytest.approx(box.lengths, abs=1e-6)
+
+
+def test_nearly_aligned_box_needs_no_transformation():
+    # Off the axes by 1e-8 rad: round-off of a STEP export
+    placement = gp_Ax2(gp_Pnt(12345.678, 0, 0), gp_Dir(0, 1e-8, 1), gp_Dir(1, 0, 0))
+    box = box_from_solid(solids(BRepPrimAPI_MakeBox(placement, 100, 50, 20).Shape())[0])
+    assert box.axis_aligned
+    card = fmesh_card(box, size=5)
+    assert "TR" not in card
+    # Nine digits: not rounded to 1234.57. The tilt moves the bounds by 5e-8 cm.
+    origin = [float(v) for v in card.split("ORIGIN=")[1].split("\n")[0].split()]
+    assert origin == pytest.approx([1234.5678, 0, 0], abs=1e-6)
+    assert "ORIGIN=1234.5678 " in card
+    assert "IMESH=1244.5678 " in card
 
 
 def _prism(*points, height=30.0):

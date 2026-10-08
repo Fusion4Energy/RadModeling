@@ -27,6 +27,10 @@ MAX_TRANSFORM = 999
 LINE_LENGTH = 80  # MCNP 6.1 and older; 6.2 allows 128
 FIRST_TALLY = 14
 FIRST_TRANSFORM = 900
+# Boxes within this of the main axes (direction cosines) are snapped to them: no TR
+# for the round-off of a STEP export. Off by at most this times the box size.
+ALIGNED_TOLERANCE = 1e-6
+ZERO = 1e-9  # written values below this are round-off: written as 0
 
 
 @dataclass
@@ -39,7 +43,7 @@ class MeshBox:
 
     @property
     def axis_aligned(self) -> bool:
-        return bool(np.allclose(np.abs(self.axes), np.eye(3), atol=1e-9))
+        return bool(np.array_equal(self.axes, np.eye(3)))
 
 
 def box_from_solid(solid: TopoDS_Solid, tolerance: float = 1e-6) -> MeshBox:
@@ -70,6 +74,10 @@ def box_from_solid(solid: TopoDS_Solid, tolerance: float = 1e-6) -> MeshBox:
     i_axis = i_axis * np.sign(i_axis[0] or 1.0)
     j_axis = np.cross(k_axis, i_axis)
     axes = np.array([i_axis, j_axis, k_axis])
+    u, _, vt = np.linalg.svd(axes)  # nearest orthonormal frame: exact TR rows
+    axes = u @ vt
+    if np.allclose(axes, np.eye(3), atol=ALIGNED_TOLERANCE):
+        axes = np.eye(3)
 
     vertices = np.array([_vertex_point(v) for v in explore(solid, TopAbs_VERTEX)])
     vertices /= MM_PER_CM
@@ -122,17 +130,21 @@ def fmesh_card(
         origin, ends = box.corner, box.corner + box.lengths
     else:
         origin, ends = np.zeros(3), box.lengths
-    lines.append(f"     ORIGIN={origin[0]:.6g} {origin[1]:.6g} {origin[2]:.6g}")
+    lines.append(f"     ORIGIN={_numbers(origin)}")
     for name, end, count in zip("IJK", ends, counts, strict=True):
-        lines.append(f"     {name}MESH={end:.6g} {name}INTS={count}")
+        lines.append(f"     {name}MESH={_numbers([end])} {name}INTS={count}")
     if not box.axis_aligned:
         lines.append(f"     TR={transform}")
         # Auxiliary origin and axes in main coordinates (M = 1)
-        corner = " ".join(f"{v + 0.0:.9g}" for v in box.corner)
-        lines.append(f"TR{transform} {corner}")
+        lines.append(f"TR{transform} {_numbers(box.corner)}")
         for row in box.axes:
-            lines.append("     " + " ".join(f"{v + 0.0:.9g}" for v in row))
+            lines.append(f"     {_numbers(row)}")
     return "\n".join(lines) + "\n"
+
+
+def _numbers(values) -> str:
+    """Nine significant digits, round-off written as 0 (never -0 or 1e-17)."""
+    return " ".join(f"{v if abs(v) >= ZERO else 0.0:.9g}" for v in values)
 
 
 def voxel_counts(box: MeshBox, size: float) -> list[int]:
