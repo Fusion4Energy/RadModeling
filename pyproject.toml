@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling>=1.27", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -7,8 +7,20 @@ name = "radmodeling"
 dynamic = ["version"]
 description = "CAD preparation and CAD-to-MCNP quality assurance tools"
 readme = "README.md"
-license = { text = "EUPL-1.2" }
+license = "EUPL-1.2"
+license-files = ["LICENSE"]
+authors = [{ name = "Alvaro Cubi" }]
 requires-python = ">=3.10"
+keywords = ["MCNP", "CAD", "STEP", "GEOUNED", "radiation transport", "neutronics"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 dependencies = [
     "cadquery-ocp-novtk>=7.8",
     "migjorn>=0.3.11",
@@ -18,6 +30,11 @@ dependencies = [
     "rich>=13",
     "tomli>=2.0; python_version < '3.11'",
 ]
+
+[project.urls]
+Documentation = "https://radmodeling.readthedocs.io"
+Source = "https://github.com/Fusion4Energy/RadModeling"
+Issues = "https://github.com/Fusion4Energy/RadModeling/issues"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5", "cadquery-ocp-stubs>=7.8", "pyright>=1.1.380"]
@@ -30,6 +47,9 @@ radmod = "radmodeling.cli:app"
 # from the git tags (v2.0.0 -> 2.0.0); builds without git history get the fallback
 source = "vcs"
 fallback-version = "0.0.0"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/radmodeling", "src/radmod"]

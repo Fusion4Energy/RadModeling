@@ -7,13 +7,12 @@ icon: lucide/download
 RadModeling needs Python 3.10 or newer. It works on Windows, Linux and macOS; only
 the SpaceClaim tools need Windows.
 
-## For users
-
 ```bash
-pip install git+https://github.com/Fusion4Energy/RadModeling.git
+pip install radmodeling
 ```
 
-This installs the `radmod` command. Check it with `radmod --help`.
+This installs the `radmod` command. Check it with `radmod --help`, and update it with
+`pip install -U radmodeling`, which also updates the [SpaceClaim tools](spaceclaim.md).
 
 !!! note
 
@@ -21,16 +20,7 @@ This installs the `radmod` command. Check it with `radmod --help`.
     denied"), write `python -m radmod` wherever the documentation says `radmod`: it
     is the same command with the same arguments, e.g. `python -m radmod check ...`.
 
-## For development, or to get SpaceClaim tools that update with the code
-
-```bash
-git clone https://github.com/Fusion4Energy/RadModeling.git
-cd RadModeling
-pip install -e ".[dev]"
-```
-
-With an editable install (`-e`), a `git pull` updates both `radmod` and the
-SpaceClaim tools. See [SpaceClaim tools](spaceclaim.md).
+To work on RadModeling itself, see [Development](development.md).
 
 ## Dependencies
 

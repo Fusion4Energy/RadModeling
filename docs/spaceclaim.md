@@ -11,9 +11,7 @@ rest of the logic lives in the Python package.
 
 ## Setting them up (once)
 
-1. Install radmodeling on the Windows machine, preferably as an editable install
-   (`pip install -e`, see [Installation](installation.md)) so that `git pull`
-   updates the tools.
+1. Install radmodeling on the Windows machine (see [Installation](installation.md)).
 2. Write the loaders:
 
     ```bash
@@ -23,9 +21,9 @@ rest of the logic lives in the Python package.
 3. In SpaceClaim, open each loader in the script editor and publish it as a tool.
 
 Each loader only points to the tool inside the radmodeling installation and runs it.
-When radmodeling is updated, the published tools run the new code: there is nothing to
-publish again. Use `--api-version` if your SpaceClaim needs a scripting API version
-other than `V241`.
+When radmodeling is updated (`pip install -U radmodeling`), the published tools run the
+new code: there is nothing to publish again. Use `--api-version` if your SpaceClaim
+needs a scripting API version other than `V241`.
 
 The tools look for the `*_registry.csv` file next to the SpaceClaim document and ask
 for it if there is none or more than one.
@@ -43,19 +41,18 @@ material.
 
 ### Check model
 
-Runs `radmod check` on the open document without leaving SpaceClaim: saves a STEP
-copy next to it with the same name (`machine_simplified.scdocx` →
-`machine_simplified.step`, replacing the previous copy), checks it against the
-registry, shows the report and colours the components with problems in red. Those
-with only warnings are yellow: tori (fine in MCNP with their axis along X, Y or Z),
-moved components (which may be moved on purpose), components with deleted instances
-(the instances left are coloured) and new components (just added to the registry
-with status `new`). The document is not changed, so the `.scdocx` stays the working file. The
-registry must not be open in Excel, as the check updates it. SpaceClaim waits while the check runs. The volume tolerance is
-the `volume-tolerance` setting, as for `radmod check`.
+Runs `radmod check` on the open document without leaving SpaceClaim: saves a STEP copy
+next to it with the same name (`machine_simplified.scdocx` → `machine_simplified.step`,
+replacing the previous copy), checks it against the registry, shows the report and
+colours the components with problems in red. Those with only warnings are yellow: tori
+(fine in MCNP with their axis along X, Y or Z), moved components (which may be moved on
+purpose), components with deleted instances (the instances left are coloured) and new
+components (just added to the registry with status `new`). The document is not changed,
+so the `.scdocx` stays the working file. The registry must not be open in Excel, as the
+check updates it. SpaceClaim waits while the check runs. The volume tolerance is the
+`volume-tolerance` setting, as for `radmod check`.
 
-It runs `radmod` with the Python that wrote the loaders. Loaders written before this
-tool existed do not know it: write them again and publish *Check model*.
+It runs `radmod` with the Python that wrote the loaders.
 
 ### Tag new components
 
@@ -68,9 +65,9 @@ adds them to the registry.
 
 ### Check volumes
 
-Colours in red the instances whose volume differs from the original by more than
-the `volume-tolerance` setting (1 % by default), blue transparent the rest, and grey the untagged
-bodies.
+Colours in red the instances whose volume differs from the original by more than the
+`volume-tolerance` setting (1 % by default), blue transparent the rest, and grey the
+untagged bodies.
 
 ### Adjust volume
 
@@ -117,14 +114,14 @@ Draws the points of a CSV file (x, y, z in cm) as spheres of radius `PointRadius
 
 ### Fmesh
 
-Draw a box (any orientation) where each mesh tally should be, select the boxes (or
-any of their faces) and run it: the FMESH cards are written to `<name>_fmesh.txt` next
-to the document (save it first), replacing the previous file. Each card comes after a comment with
-the name of its box. Tally numbers start at 14 and go up by 10; rotated boxes get a TR
-card for the mesh, numbered from 900. The voxels are at most `FmeshVoxelSize` cm (5 by
-default) along each axis, and the message lists how many each mesh has. The tally
-numbers, particle (`n`) and voxels are meant to be edited in the file. Selected bodies
-that are not boxes are skipped.
+Draw a box (any orientation) where each mesh tally should be, select the boxes (or any
+of their faces) and run it: the FMESH cards are written to `<name>_fmesh.txt` next to
+the document (save it first), replacing the previous file. Each card comes after a
+comment with the name of its box. Tally numbers start at 14 and go up by 10; rotated
+boxes get a TR card for the mesh, numbered from 900. The voxels are at most
+`FmeshVoxelSize` cm (5 by default) along each axis, and the message lists how many each
+mesh has. The tally numbers, particle (`n`) and voxels are meant to be edited in the
+file. Selected bodies that are not boxes are skipped.
 
 ## Parameters
 
@@ -143,6 +140,4 @@ reads and a value. Without the parameter, the tool uses its default.
 The volume tolerance is not a script parameter: *Check model*, *Check volumes* and
 *Adjust volume* use the `volume-tolerance` setting, like `radmod check` and
 `radmod compare`, so it is set once for all of them with
-`radmod config volume-tolerance VALUE` (see [Commands](commands.md#config)). Loaders
-written before the setting existed do not know where it is: write them again with
-`radmod spaceclaim-loaders` and publish them again.
+`radmod config volume-tolerance VALUE` (see [Commands](commands.md#config)).

@@ -5,16 +5,34 @@ icon: lucide/code
 # Development
 
 ```bash
+git clone https://github.com/Fusion4Energy/RadModeling.git
+cd RadModeling
 pip install -e ".[dev]"
 pytest
 ruff check . && ruff format .
+pyright src tests
 ```
+
+With an editable install (`-e`), a `git pull` updates both `radmod` and the
+SpaceClaim tools.
 
 The documentation is built with [Zensical](https://zensical.org):
 
 ```bash
 pip install -e ".[docs]"
 zensical serve
+```
+
+## Releases
+
+The version comes from the git tags. Pushing a tag such as `v2.1.0` on `master` runs
+the tests, builds the package and publishes it to
+[PyPI](https://pypi.org/project/radmodeling/) (the `release` workflow, with PyPI
+Trusted Publishing):
+
+```bash
+git tag v2.1.0
+git push origin v2.1.0
 ```
 
 ## Layout

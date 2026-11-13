@@ -629,10 +629,10 @@ def slice_(
         str, typer.Option(help="'x', 'y', 'z' or a vector such as '0,1,1'.")
     ] = "z",
     origin: Annotated[
-        str | None, typer.Option(help="Centre of the slice 'x,y,z' [cm].")
+        str | None, typer.Option(help="Centre of the slice 'x,y,z', in cm.")
     ] = None,
-    width: Annotated[float | None, typer.Option(help="Width [cm].")] = None,
-    height: Annotated[float | None, typer.Option(help="Height [cm].")] = None,
+    width: Annotated[float | None, typer.Option(help="Width in cm.")] = None,
+    height: Annotated[float | None, typer.Option(help="Height in cm.")] = None,
     resolution: ResolutionOption = 800,
 ) -> None:
     """Plot a slice of the MCNP geometry, optionally overlaid with the CAD.
@@ -874,7 +874,7 @@ def config(
 @app.command(hidden=True)
 def fmesh(
     step: Annotated[Path, typer.Argument(help="STEP with one box per mesh tally.")],
-    size: Annotated[float, typer.Option(help="Voxel size [cm].")],
+    size: Annotated[float, typer.Option(help="Voxel size in cm.")],
     output: Annotated[
         Path | None, _output("File for the FMESH cards. Default: STEP_fmesh.txt.")
     ] = None,
@@ -938,9 +938,8 @@ def spaceclaim_loaders(
 ) -> None:
     """Write the loader scripts to publish once as SpaceClaim tools.
 
-    Each loader runs its tool from this radmodeling installation. With an editable
-    install (pip install -e) every 'git pull' updates the tools in SpaceClaim with no
-    need to publish them again.
+    Each loader runs its tool from this radmodeling installation, so updating
+    radmodeling updates the tools in SpaceClaim with no need to publish them again.
     """
     import sys
 

@@ -117,19 +117,19 @@ radmod check machine_simplified.step -r machine_registry.csv
 `-r` can be left out when `machine_registry.csv` is the only registry next to the
 model or in the current folder: every command finds it and prints which one it used.
 
-`radmod` reads STEP files, not SpaceClaim's `.scdocx`. Save a STEP copy of the
-document over `machine_simplified.step` to check it, or use the
-[*Check model*](spaceclaim.md#check-model) SpaceClaim tool, which does both in one
-click. The STEP written by `init` is not needed once the work has started: the
-registry keeps the original volumes and positions. `check` and `export` warn when a `.scdocx` of the same name was saved after the STEP file, as they would read an older
-model.
+`radmod` reads STEP files, not SpaceClaim's `.scdocx`. Save a STEP copy of the document
+over `machine_simplified.step` to check it, or use the [*Check
+model*](spaceclaim.md#check-model) SpaceClaim tool, which does both in one click. The
+STEP written by `init` is not needed once the work has started: the registry keeps the
+original volumes and positions. `check` and `export` warn when a `.scdocx` of the same
+name was saved after the STEP file, as they would read an older model.
 
 Reports the instances beyond the volume tolerance (the `volume-tolerance` setting, 1 %
-by default: change it once with `radmod config volume-tolerance 2`), and the geometry that will cause
-trouble in the conversion: surfaces a CSG converter cannot translate (splines, offset
-surfaces...), tori and invalid solids. It also lists deleted instances, extra
-instances (copies of a component), moved components, new components (tags not in the
-registry yet, which it adds with status `new`) and untagged parts.
+by default: change it once with `radmod config volume-tolerance 2`), and the geometry
+that will cause trouble in the conversion: surfaces a CSG converter cannot translate
+(splines, offset surfaces...), tori and invalid solids. It also lists deleted instances,
+extra instances (copies of a component), moved components, new components (tags not in
+the registry yet, which it adds with status `new`) and untagged parts.
 
 Differences of about 0.1 % in parts nobody has touched may occur: the CAD program
 rebuilds the geometry when it imports and exports a STEP (surface types, tolerances),
@@ -210,30 +210,31 @@ searches the instances again itself.
 radmod materials machine_export.mcnp -r machine_registry.csv -l materials.toml
 ```
 
-Writes `machine_export_materials.mcnp` with the material number and density of every tagged
-cell (density × DCF, as mass density). Every problem (components without material,
-unknown materials, tags of components not in the registry...) is reported at once so
-the registry can be fixed in one go.
+Writes `machine_export_materials.mcnp` with the material number and density of every
+tagged cell (density × DCF, as mass density). Every problem (components without
+material, unknown materials, tags of components not in the registry...) is reported at
+once so the registry can be fixed in one go.
 
-The DCF applied is the `dcf` column of the registry, so what the registry shows is
-what goes into the input. `compare` writes it, and no other command changes it.
-It is 1 unless the MCNP volume differs from the original one by more than the volume
-tolerance (the `volume-tolerance` setting, 1 % by default, as in `check`) plus three standard
-deviations. The tolerance is the volume difference already accepted when
-simplifying: correcting it in the densities would contradict `check`, and it does not
-add up, as the mass of the whole model is then also within the tolerance. Beyond it,
-the DCF is the full ratio of the original volume to the MCNP one: this catches the
-components accepted beyond the tolerance in `check`, and those the conversion moved
-beyond it. The three standard deviations keep the noise of `compare` from pushing a
-component just within the tolerance beyond it. The command counts the instances corrected, those not corrected (DCF of 1), those whose
-DCF was edited by hand and those without DCF (not compared yet). Use `--no-dcf` to
-ignore the density correction factors altogether.
+The DCF applied is the `dcf` column of the registry, so what the registry shows is what
+goes into the input. `compare` writes it, and no other command changes it. It is 1
+unless the MCNP volume differs from the original one by more than the volume tolerance
+(the `volume-tolerance` setting, 1 % by default, as in `check`) plus three standard
+deviations. The tolerance is the volume difference already accepted when simplifying:
+correcting it in the densities would contradict `check`, and it does not add up, as the
+mass of the whole model is then also within the tolerance. Beyond it, the DCF is the
+full ratio of the original volume to the MCNP one: this catches the components accepted
+beyond the tolerance in `check`, and those the conversion moved beyond it. The three
+standard deviations keep the noise of `compare` from pushing a component just within the
+tolerance beyond it. The command counts the instances corrected, those not corrected
+(DCF of 1), those whose DCF was edited by hand and those without DCF (not compared yet).
+Use `--no-dcf` to ignore the density correction factors altogether.
 
 A `dcf` can be edited by hand, for instance to 1 for a component whose MCNP volume is
-not trusted. A new `compare` overwrites every factor with the one its volumes give,
-so edit them after the last `compare`. `materials` lists the factors that are neither 1 nor
-the volume ratio (a factor set to 1 by hand cannot be told apart from one left at 1). To give a component its real
-mass, set `mass_g` instead: the DCF then brings the mass of its cells to that value.
+not trusted. A new `compare` overwrites every factor with the one its volumes give, so
+edit them after the last `compare`. `materials` lists the factors that are neither 1 nor
+the volume ratio (a factor set to 1 by hand cannot be told apart from one left at 1). To
+give a component its real mass, set `mass_g` instead: the DCF then brings the mass of
+its cells to that value.
 
 The material library is a TOML file:
 
@@ -268,10 +269,10 @@ radmod atlas machine_export_materials.mcnp machine_export.step -o atlas.pdf \
     --planes x:3,y:3,z:6 --worst 20
 ```
 
-With the STEP file from `export`, the atlas first searches every instance for
-problems in 3D, sampling it like `compare` does (`--points`): CAD/MCNP mismatches
-beyond the `max-discrepancy` setting and overlapping cells. Slices alone would only find the problems
-their planes happen to cut. The PDF has:
+With the STEP file from `export`, the atlas first searches every instance for problems
+in 3D, sampling it like `compare` does (`--points`): CAD/MCNP mismatches beyond the
+`max-discrepancy` setting and overlapping cells. Slices alone would only find the
+problems their planes happen to cut. The PDF has:
 
 * **summary pages** with one row per page: the pixels in no cell, in several cells
   and where CAD and MCNP disagree, problems in red;

@@ -13,6 +13,8 @@ keep all code in `radmodeling`.
 - Types: `.venv/bin/pyright src tests` (OCP types come from `cadquery-ocp-stubs`)
 - Docs: `.venv/bin/zensical build` (or `serve`); theme colours in
   `docs/assets/stylesheets/extra.css`
+- Release: push a `vX.Y.Z` tag on master; `.github/workflows/release.yml` runs the
+  tests and publishes to PyPI (Trusted Publishing). The version comes from the tag.
 
 ## Architecture
 

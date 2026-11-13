@@ -1,10 +1,11 @@
 ![GitHub last commit](https://img.shields.io/github/last-commit/Fusion4Energy/RadModeling)
 ![GitHub issues](https://img.shields.io/github/issues/Fusion4Energy/RadModeling)
+![PyPI](https://img.shields.io/pypi/v/radmodeling)
 ![](https://img.shields.io/badge/license-EUPL--1.2-blue)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-wordmark-dark.svg">
-  <img alt="RadModeling" src="docs/assets/logo-wordmark-light.svg" width="420">
+  <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/Fusion4Energy/RadModeling/master/docs/assets/logo-wordmark-dark.svg">
+  <img alt="RadModeling" src="https://raw.githubusercontent.com/Fusion4Energy/RadModeling/master/docs/assets/logo-wordmark-light.svg" width="420">
 </picture>
 
 # RadModeling
@@ -43,19 +44,11 @@ machine_export.mcnp ──radmod compare───▶ CAD vs MCNP volumes, densit
 ## Installation
 
 ```bash
-pip install git+https://github.com/Fusion4Energy/RadModeling.git
+pip install radmodeling
 ```
 
 Where the `radmod` executable is blocked ("Access is denied"), write
 `python -m radmod` instead, with the same arguments.
-
-For development, or for SpaceClaim tools that update with `git pull`:
-
-```bash
-git clone https://github.com/Fusion4Energy/RadModeling.git
-cd RadModeling
-pip install -e ".[dev]"
-```
 
 ## Quick start
 
@@ -63,16 +56,18 @@ pip install -e ".[dev]"
 radmod init machine.step                       # tag + registry
 # fill the 'material' column of machine_registry.csv
 # simplify machine_simplified.step in SpaceClaim, save it back as STEP
-radmod check machine_simplified.step -r machine_registry.csv
-radmod export machine_simplified.step -r machine_registry.csv
+radmod check machine_simplified.step
+radmod export machine_simplified.step
 # convert machine_export.step to machine_export.mcnp with GEOUNED
-radmod compare machine_export.step machine_export.mcnp -r machine_registry.csv
-radmod materials machine_export.mcnp -r machine_registry.csv -l materials.toml
-radmod slice machine_export_materials.mcnp -o slice.png --normal z --step machine_export.step
-radmod atlas machine_export_materials.mcnp --step machine_export.step -o atlas.pdf
+radmod compare machine_export.mcnp machine_export.step
+radmod materials machine_export.mcnp -l materials.toml
+radmod slice machine_export_materials.mcnp machine_export.step --normal z
+radmod atlas machine_export_materials.mcnp machine_export.step
 ```
 
-SpaceClaim tools: `radmod spaceclaim-loaders <folder>` and publish the loaders once.
+Every command finds `machine_registry.csv` next to its input files (`-r` gives
+another one). SpaceClaim tools: `radmod spaceclaim-loaders <folder>` and publish the
+loaders once.
 
 Full documentation: https://radmodeling.readthedocs.io
 
@@ -80,8 +75,9 @@ Full documentation: https://radmodeling.readthedocs.io
 
 Copyright 2019 F4E | European Joint Undertaking for ITER and the Development of Fusion
 Energy (‘Fusion for Energy’). Licensed under the EUPL, Version 1.2 (the “Licence”); see
-[LICENSE](LICENSE). You may not use this work except in compliance with the Licence.
-Unless required by applicable law or agreed to in writing, software distributed under
-the Licence is distributed on an “AS IS” basis, WITHOUT WARRANTIES OR CONDITIONS OF
-ANY KIND, either express or implied. See the Licence for the specific language
-governing permissions and limitations under the Licence.
+[LICENSE](https://github.com/Fusion4Energy/RadModeling/blob/master/LICENSE). You may not
+use this work except in compliance with the Licence. Unless required by applicable law
+or agreed to in writing, software distributed under the Licence is distributed on an “AS
+IS” basis, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See
+the Licence for the specific language governing permissions and limitations under the
+Licence.

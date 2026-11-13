@@ -57,27 +57,19 @@ how `compare`, `materials` and `slice` find the cells of each component.
 radmod compare MODEL.mcnp EXPORT.step
 ```
 
-CAD vs MCNP volumes and discrepancies per instance, and the volume shared by the
-cells of different instances (or by cells of the same instance). A clash in the CAD,
-such as a bolt left inside a plate, converts faithfully: each instance agrees with its
-own cells, but their cells overlap. Each pair is measured from the points sampled
-around the smaller instance (the more densely sampled one); a very small overlap
-can be missed, so raise `--points` to look closer. `--components 3,7.2` limits it
-to some components (all instances of 3, instance 2 of 7), `--points` sets the
-samples per instance (100 000 by default). Every instance gets its own random
-points from `--seed` and its key, so a result does not depend on the other instances
-compared. Instances whose discrepancy is beyond the `max-discrepancy` setting (1 % by default,
-see [config](#config)) are reported as problems, with every overlapping pair. The
-MCNP volumes are saved in the registry: `compare` writes no other file.
+CAD vs MCNP volumes and discrepancies per instance, and the volume shared by
+overlapping cells of different instances (or of the same one). The instances beyond
+the `max-discrepancy` setting (see [config](#config)) are reported as problems. The
+MCNP volumes and the density correction factors they give (`dcf`) are saved in the
+registry (`--no-registry` skips it); nothing else is written. See
+[Compare CAD and MCNP](workflow.md#6-compare-cad-and-mcnp).
 
-The instances are compared in parallel by `--jobs` worker processes (one per CPU, at
-most 8, by default). Each worker reads the STEP file and the MCNP input itself and
-keeps its own copy in memory: lower `--jobs` for very large models.
-
-The MCNP volumes go into the registry with the density correction factors they give
-(`dcf`): original / MCNP volume when they differ by more than the `volume-tolerance`
-setting (1 % by default, as in `check`) plus three standard deviations, else 1. All the factors are
-recomputed, including those edited by hand.
+* `--components 3,7.2`: only all the instances of component 3 and instance 2 of 7.
+* `--points`: samples per instance (100 000). Raise it to find smaller overlaps.
+* `--seed`: each instance draws its points from the seed and its key, so a result
+  does not depend on the other instances compared or on `--jobs`.
+* `--jobs`: worker processes (one per CPU, at most 8). Each one keeps its own copy
+  of the model in memory: lower it for very large models.
 
 ### materials
 
@@ -85,10 +77,11 @@ recomputed, including those edited by hand.
 radmod materials MODEL.mcnp -r REGISTRY -l LIBRARY.toml
 ```
 
-Materials, densities and density correction factors in the tagged cells.
-The correction factors are the registry's `dcf` column, written by `compare` or by
-hand; `--no-dcf` ignores them. Components whose material is `void` (any case) get
-material 0 and no density in all their cells; they need no library entry.
+Materials and densities (times the registry's `dcf`) in the tagged cells, written to
+`MODEL_materials.mcnp` (or `-o`). Components whose material is `void` get material 0.
+`--no-dcf` ignores the density correction factors. See
+[Assign the materials](workflow.md#7-assign-the-materials) for the DCF and the
+library format.
 
 ### slice
 
@@ -96,11 +89,15 @@ material 0 and no density in all their cells; they need no library entry.
 radmod slice MODEL.mcnp [EXPORT.step]
 ```
 
-Slice plot, written to `MODEL_slice.png` (or `-o`). `--normal` is `x`, `y`, `z` or
-any vector such as `1,1,0`; `--origin` is the centre of the image. A STEP file
-overlays the CAD and, with the one from `export`, highlights CAD/MCNP mismatches. Cells are coloured by material; void
-cells of a component (tagged) are light grey and the untagged void around the
-components is near-white.
+Slice plot, written to `MODEL_slice.png` (or `-o`), with the cells coloured by
+material. A STEP file overlays the CAD and, with the one from `export`, highlights
+CAD/MCNP mismatches.
+
+* `--normal`: `x`, `y`, `z` (default) or any vector such as `1,1,0`.
+* `--origin`, `--width`, `--height`: centre and size of the image (cm). Without them
+  the slice covers the CAD model.
+* `-l`: material library, to show the material names.
+* `--resolution`: pixels across (800).
 
 ### atlas
 
@@ -108,13 +105,15 @@ components is near-white.
 radmod atlas MODEL.mcnp EXPORT.step
 ```
 
-PDF (`MODEL_atlas.pdf`, or `-o`) with a summary of the problems of every slice, evenly spaced slices across the
-model (`--planes x:3,y:3,z:6`) and a slice through each problem of the `--worst`
-instances, found by sampling every instance like `compare` (`--points`). Small
-problems are circled and zoomed on their own pages. It does not depend on an earlier
-`compare`: every instance is searched again, so the atlas always shows the current
-geometry. `--components` limits the search like in `compare`. The instances are searched and the slices
-classified in parallel, like `compare` (`--jobs`).
+PDF (`MODEL_atlas.pdf`, or `-o`) with a summary of the problems, evenly spaced slices
+across the model and a slice through each problem found, with small problems zoomed
+on their own pages. It searches every instance itself, like `compare`, so it does not
+need an earlier `compare`. See [Look at it](workflow.md#8-look-at-it).
+
+* `--planes`: evenly spaced planes normal to each axis (`x:3,y:3,z:3`).
+* `--worst`: maximum number of problem instances sliced (20).
+* `--resolution`: pixels across (400).
+* `--components`, `--points`, `--seed`, `--jobs`: as in `compare`.
 
 ## Settings
 
