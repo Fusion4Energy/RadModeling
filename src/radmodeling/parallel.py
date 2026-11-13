@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import multiprocessing
 import os
+import sys
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Executor, ProcessPoolExecutor
 from typing import Any, Generic, TypeVar
@@ -32,7 +33,7 @@ _state: Any = None  # what the load function of this worker returned
 
 
 def available_cpus() -> int:
-    if hasattr(os, "sched_getaffinity"):
+    if sys.platform == "linux":  # the CPUs this process may use (containers, taskset)
         return len(os.sched_getaffinity(0))
     return os.cpu_count() or 1
 

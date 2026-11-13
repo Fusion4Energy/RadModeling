@@ -911,9 +911,9 @@ def test_every_import_is_a_declared_dependency():
     import sys
     from importlib.metadata import packages_distributions
 
-    try:
+    if sys.version_info >= (3, 11):
         import tomllib
-    except ModuleNotFoundError:  # Python < 3.11
+    else:
         import tomli as tomllib
 
     root = Path(__file__).parents[1]
