@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+# Plain output wherever the tests run: typer and rich colour it (escape codes in the
+# text the tests look for) when CI sets these, read when they are first imported
+for _name in ("GITHUB_ACTIONS", "FORCE_COLOR", "PY_COLORS", "CLICOLOR_FORCE"):
+    os.environ.pop(_name, None)
 
 sys.path.insert(0, str(Path(__file__).parent))
 
