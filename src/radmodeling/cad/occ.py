@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Generic, TypeVar
 
 from OCP.Bnd import Bnd_Box
 from OCP.BRepBndLib import BRepBndLib
@@ -15,7 +14,9 @@ from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS, TopoDS_Face, TopoDS_Shape, TopoDS_Solid
 
 try:  # OCP >= 8
-    from OCP.collections import Sequence_TDF_Label as LabelSequence
+    from OCP.collections import (  # pyright: ignore[reportMissingModuleSource]
+        Sequence_TDF_Label as LabelSequence,
+    )
 except ImportError:  # OCP 7.x
     from OCP.TDF import TDF_LabelSequence as LabelSequence  # type: ignore[no-redef]
 
@@ -64,10 +65,7 @@ def volume_and_centroid(shape: TopoDS_Shape) -> tuple[float, tuple[float, ...]]:
     return props.Mass(), (centre.X(), centre.Y(), centre.Z())
 
 
-T = TypeVar("T")
-
-
-class GeometryMap(Generic[T]):
+class GeometryMap[T]:
     """A dict keyed by the geometry of shapes (their ``TShape``), not their placement.
 
     Instances of the same CAD part share their geometry and only differ in placement.
@@ -96,7 +94,7 @@ class GeometryMap(Generic[T]):
         bucket.append((shape, value))
 
 
-class ShapeMap(GeometryMap[T]):
+class ShapeMap[T](GeometryMap[T]):
     """A dict keyed by shapes: their geometry and their placement."""
 
     @staticmethod

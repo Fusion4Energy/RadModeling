@@ -19,12 +19,11 @@ import os
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TypeAlias
 
 import migjorn
 import numpy as np
 
-Points: TypeAlias = np.ndarray  # (N, 3) in cm
+type Points = np.ndarray  # (N, 3) in cm
 
 
 class McnpParseError(ValueError):
@@ -71,7 +70,7 @@ class Transform:
 
 # --- surfaces --------------------------------------------------------------------
 
-SurfaceFunction: TypeAlias = Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]
+type SurfaceFunction = Callable[[np.ndarray, np.ndarray, np.ndarray], np.ndarray]
 
 _AXES = {"x": 0, "y": 1, "z": 2}
 
@@ -316,7 +315,7 @@ MACROBODIES = {
 # The boxes come from bounded surfaces (spheres, macrobodies, tori), cylinders and
 # axis-aligned planes; anything else is considered unbounded.
 
-Box: TypeAlias = tuple[np.ndarray, np.ndarray]  # (low corner, high corner)
+type Box = tuple[np.ndarray, np.ndarray]  # (low corner, high corner)
 INF = np.inf
 
 

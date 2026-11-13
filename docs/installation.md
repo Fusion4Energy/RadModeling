@@ -4,7 +4,7 @@ icon: lucide/download
 
 # Installation
 
-RadModeling needs Python 3.10 or newer. It works on Windows, Linux and macOS; only
+RadModeling needs Python 3.12 or newer. It works on Windows, Linux and macOS; only
 the SpaceClaim tools need Windows.
 
 ```bash

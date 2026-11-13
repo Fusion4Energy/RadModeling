@@ -15,11 +15,7 @@ import os
 import sys
 from collections.abc import Callable, Iterator, Sequence
 from concurrent.futures import Executor, ProcessPoolExecutor
-from typing import Any, Generic, TypeVar
-
-S = TypeVar("S")
-T = TypeVar("T")
-R = TypeVar("R")
+from typing import Any
 
 # Thread pools of the numerical libraries, read when numpy is loaded
 _THREAD_VARIABLES = (
@@ -53,7 +49,7 @@ def _run(task: tuple[Callable[[Any, Any], Any], Any]) -> Any:
     return function(_state, item)
 
 
-class Workers(Generic[S]):
+class Workers[S]:
     """Runs ``function(state, item)`` for many items, on ``jobs`` processes.
 
     ``state`` is the model loaded in this process: with a single job, or a single
@@ -70,7 +66,9 @@ class Workers(Generic[S]):
         self._executor: Executor | None = None
         self._environment: dict[str, str | None] = {}
 
-    def map(self, function: Callable[[S, T], R], items: Sequence[T]) -> Iterator[R]:
+    def map[T, R](
+        self, function: Callable[[S, T], R], items: Sequence[T]
+    ) -> Iterator[R]:
         """The results of every item, in order."""
         if self.jobs == 1 or len(items) <= 1:
             return (function(self.state, item) for item in items)

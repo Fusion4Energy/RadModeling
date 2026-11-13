@@ -15,18 +15,13 @@ defined elsewhere, and the material numbers used without a card are reported.
 from __future__ import annotations
 
 import os
-import sys
+import tomllib
 from dataclasses import dataclass, field
 
 import migjorn
 
 from radmodeling.mcnp.tags import cells_by_instance
 from radmodeling.registry import Key, Registry
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover
-    import tomli as tomllib
 
 
 @dataclass

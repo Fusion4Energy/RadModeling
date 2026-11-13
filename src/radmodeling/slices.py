@@ -227,7 +227,7 @@ def _near_agreement(
             inside |= evaluator.cell(number)
         agree |= (cad == instance) & inside
         agree |= (cad == 0) & (mcnp == instance) & ~inside
-    return agree.reshape(len(steps), -1).any(axis=0)
+    return np.logical_or.reduce(agree.reshape(len(steps), -1), axis=0)
 
 
 def problem_pixels(result: SliceResult) -> np.ndarray:

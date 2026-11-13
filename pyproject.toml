@@ -10,7 +10,7 @@ readme = "README.md"
 license = "EUPL-1.2"
 license-files = ["LICENSE"]
 authors = [{ name = "Alvaro Cubi" }]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 keywords = [
     "MCNP",
     "CAD",
@@ -31,11 +31,10 @@ classifiers = [
 dependencies = [
     "cadquery-ocp-novtk>=7.8",
     "migjorn>=0.3.11",
-    "numpy>=1.24",
+    "numpy>=1.26",
     "matplotlib>=3.7",
     "typer>=0.12",
     "rich>=13",
-    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.urls]
@@ -72,7 +71,7 @@ exclude = ["src/radmodeling/spaceclaim", ".venv"]
 
 [tool.ruff]
 line-length = 88
-target-version = "py310"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]

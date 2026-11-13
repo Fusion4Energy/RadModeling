@@ -909,12 +909,8 @@ def test_every_import_is_a_declared_dependency():
     import ast
     import re
     import sys
+    import tomllib
     from importlib.metadata import packages_distributions
-
-    if sys.version_info >= (3, 11):
-        import tomllib
-    else:
-        import tomli as tomllib
 
     root = Path(__file__).parents[1]
     project = tomllib.loads((root / "pyproject.toml").read_text())["project"]
@@ -938,7 +934,7 @@ def test_every_import_is_a_declared_dependency():
                 continue
             for name in names:
                 top = name.partition(".")[0]
-                if top in sys.stdlib_module_names or top in ("radmodeling", "tomli"):
+                if top in sys.stdlib_module_names or top == "radmodeling":
                     continue
                 provided = {normal(d) for d in distributions.get(top, [])}
                 if not provided & declared:
