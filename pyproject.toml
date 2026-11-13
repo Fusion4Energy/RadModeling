@@ -11,7 +11,14 @@ license = "EUPL-1.2"
 license-files = ["LICENSE"]
 authors = [{ name = "Alvaro Cubi" }]
 requires-python = ">=3.10"
-keywords = ["MCNP", "CAD", "STEP", "GEOUNED", "radiation transport", "neutronics"]
+keywords = [
+    "MCNP",
+    "CAD",
+    "STEP",
+    "GEOUNED",
+    "radiation transport",
+    "neutronics",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
