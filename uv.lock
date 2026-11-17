@@ -566,15 +566,15 @@ wheels = [
 
 [[package]]
 name = "migjorn"
-version = "0.3.11"
+version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/53/4d/e4d23cb9f7af0afd7475e10c41aae6e0075923bd7809868cde10c0e9f058/migjorn-0.3.11.tar.gz", hash = "sha256:0c31f652f467e789569deb9a680026466d133b108d59a9a4dc02b9376d2b9316", size = 100053, upload-time = "2026-09-22T09:52:07.658Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/61/ec/14911c28661101b4ae05eabdbd1a117ca957232d27ebfb8b8915311f82cb/migjorn-0.4.0.tar.gz", hash = "sha256:e5ed2e56d250fb5450dd523d3418035ad8d6e713486408a20c64b3468aefdb65", size = 197866, upload-time = "2026-11-11T17:02:13.505Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f3/91/f02e6d2f6a51c5fa22958840277d05922257cd7c1e368da9ce91b1c2c053/migjorn-0.3.11-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:4fd4f74c63c9e375c6500f475b9455ce2578eb9f803a6b88ee146064e43d6675", size = 547536, upload-time = "2026-09-22T09:52:00.361Z" },
-    { url = "https://files.pythonhosted.org/packages/8e/51/9f7da931168eef4bd83a3efa377b28f8128a7ec8d775bdc09e41625cc230/migjorn-0.3.11-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:ace23af30659d0aafda45809e664adee777d4617b8120d706aedfe32902f68fe", size = 528663, upload-time = "2026-09-22T09:52:01.811Z" },
-    { url = "https://files.pythonhosted.org/packages/97/fa/c7961eb5b434cc214aecb767978d2a634ea9802151386b3792a39328777f/migjorn-0.3.11-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:e6015f087d2f2ac9a878290fe9b90f990e4a9bfddc4e2671c4ff1b24574ce59a", size = 577787, upload-time = "2026-09-22T09:52:03.487Z" },
-    { url = "https://files.pythonhosted.org/packages/1b/37/97c1b5302d4edc0424d64844194e902c459d371e9ba20d969299fd34a035/migjorn-0.3.11-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:8d1126168365ab31813001d427509c30b46d114797d9c9756bd13350b830700a", size = 589702, upload-time = "2026-09-22T09:52:04.866Z" },
-    { url = "https://files.pythonhosted.org/packages/76/e1/df4b7ad6ccdaa4c61f264a2a0cc07b0980b5cf1fec082f3f765cd1fbdba9/migjorn-0.3.11-cp39-abi3-win_amd64.whl", hash = "sha256:9b0da76cc9b75d0a5d4354f03211ddf3bfba49fc50c0370857a3aad7104128ff", size = 448230, upload-time = "2026-09-22T09:52:06.38Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/7b/b426421a580bc92840ae9ad540dde6a72692314e5af0eadf4a4252772af2/migjorn-0.4.0-cp39-abi3-macosx_10_12_x86_64.whl", hash = "sha256:c74c14992900873edf6037e18e144f721fb862e5347e887b2959153f81dece34", size = 827571, upload-time = "2026-11-11T17:02:05.419Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/1a/1c208780cb01c09ce7f31f629e025f0d6d7a202dcd2826985794ca400b5c/migjorn-0.4.0-cp39-abi3-macosx_11_0_arm64.whl", hash = "sha256:1644331b67c97db58caf8d7b2e15f07ecf8a4f55d19f44c6c812358a51324da3", size = 798954, upload-time = "2026-11-11T17:02:07.252Z" },
+    { url = "https://files.pythonhosted.org/packages/65/38/d3d8e4bdc0086d7855360587918312401df1957879e315f62edfb13c4d5e/migjorn-0.4.0-cp39-abi3-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:cf9a2b4d01b9d7bbf6b74c8a0a8d84bfa9cf0cc60999024e13b2c1b5a8e027e7", size = 851392, upload-time = "2026-11-11T17:02:08.969Z" },
+    { url = "https://files.pythonhosted.org/packages/d9/4e/664d9d6bcb6b1c8c952cd0332e21c20e4e844a4407dd277dc508832bb881/migjorn-0.4.0-cp39-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:ded39ce6a0fd30413c70d3e39cbb3433a49b1e405beccba614d37add051385cf", size = 870401, upload-time = "2026-11-11T17:02:10.519Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/b6/d44f459dc5ef9f887521a7e1277c80e10a1677805d60f026d6d19638a5a7/migjorn-0.4.0-cp39-abi3-win_amd64.whl", hash = "sha256:e3a96b9cd3ed639f472816892012310225f4a9edece11d2046996c200359d9c4", size = 743038, upload-time = "2026-11-11T17:02:11.924Z" },
 ]
 
 [[package]]
@@ -903,7 +903,7 @@ requires-dist = [
     { name = "cadquery-ocp-novtk", specifier = ">=7.8" },
     { name = "cadquery-ocp-stubs", marker = "extra == 'dev'", specifier = ">=7.8" },
     { name = "matplotlib", specifier = ">=3.7" },
-    { name = "migjorn", specifier = ">=0.3.11" },
+    { name = "migjorn", specifier = ">=0.4.0" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.380" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },

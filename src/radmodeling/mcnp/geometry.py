@@ -35,37 +35,27 @@ class McnpParseError(ValueError):
 
 @dataclass
 class Transform:
-    displacement: np.ndarray
+    displacement: np.ndarray  # auxiliary origin in main coordinates
     rotation: np.ndarray  # rows are the auxiliary axes in main coordinates
-    origin_in_main: bool = True  # M = 1
 
     def to_auxiliary(self, points: Points) -> Points:
-        if self.origin_in_main:
-            return (points - self.displacement) @ self.rotation.T
-        return points @ self.rotation.T + self.displacement
+        return (points - self.displacement) @ self.rotation.T
 
     def to_main(self, points: Points) -> Points:
-        if self.origin_in_main:
-            return points @ self.rotation + self.displacement
-        return (points - self.displacement) @ self.rotation
+        return points @ self.rotation + self.displacement
+
+    @classmethod
+    def from_affine(cls, affine: migjorn.Affine) -> Transform:
+        # migjorn's rotation has the auxiliary axes as columns
+        return cls(np.array(affine.translation), np.array(affine.rotation).T)
 
     @classmethod
     def from_values(cls, values: list[float], degrees: bool) -> Transform:
-        displacement = np.array(values[:3], dtype=float)
-        if len(values) == 3:
-            return cls(displacement, np.eye(3))
-        if len(values) not in (12, 13):
-            raise McnpParseError("Only TR cards with 3, 12 or 13 entries are supported")
-        matrix = np.array(values[3:12], dtype=float)
-        if degrees:
-            matrix = np.cos(np.radians(matrix))
-        # Entries are xx' yx' zx' xy' yy' zy' xz' yz' zz': each triplet is an
-        # auxiliary axis expressed in main coordinates.
-        rotation = matrix.reshape(3, 3)
-        u, _, vt = np.linalg.svd(rotation)  # nearest orthonormal matrix, as MCNP does
-        rotation = u @ vt
-        origin_in_main = len(values) == 12 or values[12] != -1
-        return cls(displacement, rotation, origin_in_main)
+        """The transformation of a TR card's values, built as MCNP builds it."""
+        try:
+            return cls.from_affine(migjorn.Affine.from_mcnp(values, degrees=degrees))
+        except ValueError as exc:
+            raise McnpParseError(f"Unsupported TR card: {exc}") from exc
 
 
 # --- surfaces --------------------------------------------------------------------
@@ -616,7 +606,7 @@ def _cell_from_card(card: migjorn.Cell) -> Cell:
 def _surfaces_from_card(card: migjorn.Surface) -> list[Surface]:
     """Surfaces of a card. Macrobodies give one surface per facet plus the body."""
     name = str(card.id)
-    kind = (card.kind or "").lower()
+    kind = (card.mnemonic or "").lower()
     transform = card.transform
     if transform is not None and transform < 0:
         return [Surface(name, kind, None, None, "periodic surfaces are not supported")]
@@ -673,9 +663,11 @@ class Geometry:
 
         for card in model.transforms():
             if card.id is not None:
-                self.transforms[card.id] = Transform.from_values(
-                    list(card.coeffs), degrees=card.degrees
-                )
+                try:
+                    affine = card.affine
+                except ValueError as exc:
+                    raise McnpParseError(f"Unreadable TR{card.id}: {exc}") from exc
+                self.transforms[card.id] = Transform.from_affine(affine)
         for card in model.surfaces():
             if card.id is not None:
                 for surface in _surfaces_from_card(card):

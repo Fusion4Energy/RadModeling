@@ -13,7 +13,7 @@ classifier, on top of the [migjorn](https://pypi.org/project/migjorn/) parser.
   C/Z, CX, CY, CZ, K/X, K/Y, K/Z, KX, KY, KZ (including one-sheet cones), SQ, GQ, TX,
   TY, TZ, and X, Y, Z defined by two points.
 * Macrobodies RPP, BOX, SPH, RCC and TRC, as bodies and through their facets.
-* TR and \*TR transformations on surfaces (3, 12 or 13 entries).
+* TR and \*TR transformations on surfaces, with the defaults MCNP gives omitted entries.
 * Intersections, unions, complements `#n` and `#( )`, and LIKE n BUT cells.
 
 ## Not supported

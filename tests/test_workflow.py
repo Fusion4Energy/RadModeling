@@ -320,7 +320,7 @@ def test_cells_are_found_by_the_tags_in_their_comments():
         (1, 1): [1], (2, 1): [2], (3, 1): [3], (4, 1): [4, 5]
     }  # fmt: skip
     # The tags survive renumbering, unlike the cell order
-    model.renumber_cells({1: 105, 2: 104, 3: 103, 4: 102, 5: 101})
+    model.renumber("cell", {1: 105, 2: 104, 3: 103, 4: 102, 5: 101})
     assert cells_by_instance(model) == {
         (1, 1): [105], (2, 1): [104], (3, 1): [103], (4, 1): [102, 101]
     }  # fmt: skip
@@ -754,7 +754,7 @@ def test_cli_pipeline(tmp_path, cad_model, library_file):
     mcnp = tmp_path / "model.mcnp"
     # Renumbering the cells does not lose track of the components
     model = migjorn.parse(models.mcnp_text())
-    model.offset_cells(100)
+    model.offset("cell", 100)
     model.save(str(mcnp))
 
     output = run("compare", mcnp, exported, "--seed", "1", "--points", "20000")
